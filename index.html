@@ -236,6 +236,26 @@
   .qa-verdict.fail { color: var(--accent-red); }
   .qa-issues { font-size: 11px; color: var(--text-secondary); line-height: 1.5; }
 
+  /* Opportunities Table */
+  .opp-row { display: grid; grid-template-columns: 1fr 80px 60px 60px; gap: 8px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 11px; }
+  .opp-row:last-child { border-bottom: none; }
+  .opp-row.tbl-header { font-size: 10px; font-family: var(--mono); color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.8px; padding-bottom: 6px; }
+  .opp-desc { color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .opp-val { font-family: var(--mono); color: var(--text-primary); text-align: right; }
+  .opp-cagr { font-family: var(--mono); text-align: right; }
+
+  /* Sidebar Evidence/QA feed items */
+  .side-ev-item { padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 11px; }
+  .side-ev-item:last-child { border-bottom: none; }
+  .side-ev-type { font-family: var(--mono); font-size: 10px; color: var(--accent-gold); text-transform: uppercase; }
+  .side-ev-claim { color: var(--text-secondary); margin-top: 2px; line-height: 1.4; }
+  .side-ev-hs { font-family: var(--mono); font-size: 10px; color: var(--text-muted); margin-top: 2px; }
+
+  .side-qa-item { padding: 8px 0; border-bottom: 1px solid var(--border); }
+  .side-qa-item:last-child { border-bottom: none; }
+  .side-qa-head { font-family: var(--mono); font-size: 11px; font-weight: 600; margin-bottom: 3px; }
+  .side-qa-issue { font-size: 11px; color: var(--text-secondary); line-height: 1.4; }
+
   /* Loading */
   .loading-state { text-align: center; padding: 40px; color: var(--text-muted); font-family: var(--mono); font-size: 13px; }
   .loading-spinner { display: inline-block; width: 20px; height: 20px; border: 2px solid var(--border); border-top-color: var(--accent-gold); border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 10px; }
@@ -479,26 +499,100 @@ function ActivityFeed({ activity }) {
   );
 }
 
+function RightSidebar({ activity, evidence, qaReviews, sideTab, setSideTab }) {
+  const tabCounts = { activity: activity.length, qa: qaReviews.length, evidence: evidence.length };
+  return h('div', { className: 'card' },
+    h('div', { className: 'tab-row' },
+      [['activity','Activity ('+tabCounts.activity+')'], ['qa','QA ('+tabCounts.qa+')'], ['evidence','Evidence ('+tabCounts.evidence+')']].map(([k,l]) =>
+        h('button', { key: k, className: 'tab-btn '+(sideTab===k?'active':''), onClick: () => setSideTab(k) }, l)
+      )
+    ),
+    h('div', { className: 'card-body', style: { maxHeight: '600px', overflowY: 'auto' } },
+      sideTab === 'activity' && (activity.length === 0
+        ? h('div', { className: 'loading-state' }, 'No agent activity yet')
+        : h(ActivityFeed, { activity })
+      ),
+      sideTab === 'qa' && (qaReviews.length === 0
+        ? h('div', { className: 'loading-state' }, 'No QA reviews yet')
+        : qaReviews.slice(0,20).map((q,i) => h('div', { className: 'side-qa-item', key: i },
+            h('div', { className: 'side-qa-head', style: { color: q.verdict==='pass'?'var(--accent-green)':'var(--accent-red)' } },
+              (q.verdict||'').toUpperCase()+' · HS '+(q.hs_code||'?')+' · Cycle '+(q.review_cycle||1)
+            ),
+            (q.issues_found||[]).length > 0
+              ? h('div', { className: 'side-qa-issue' }, (q.issues_found||[]).slice(0,2).map((iss,j) => h('div', { key: j }, '• '+(iss.length > 100 ? iss.slice(0,100)+'…' : iss))))
+              : h('div', { className: 'side-qa-issue', style: { color: 'var(--accent-green)' } }, 'All checks passed'),
+            h('div', { style: { fontSize: '10px', fontFamily: 'var(--mono)', color: 'var(--text-muted)', marginTop: 3 } }, timeAgo(q.created_at)+' ago')
+          ))
+      ),
+      sideTab === 'evidence' && (evidence.length === 0
+        ? h('div', { className: 'loading-state' }, 'No evidence logged yet')
+        : evidence.slice(0,25).map((e,i) => h('div', { className: 'side-ev-item', key: i },
+            h('div', null,
+              h('span', { className: 'side-ev-type' }, e.source_type),
+              e.source_url && h('a', { href: e.source_url, target: '_blank', rel: 'noopener', style: { color: 'var(--accent-blue)', fontSize: '10px', marginLeft: 6, textDecoration: 'none' } }, e.source_domain || 'link')
+            ),
+            h('div', { className: 'side-ev-claim' }, (e.claim||'').length > 80 ? (e.claim||'').slice(0,80)+'…' : e.claim),
+            h('div', { className: 'side-ev-hs' }, 'HS '+(e.hs_code||'?')+' · '+e.tvs_dimension+' · '+(e.confidence||'—'))
+          ))
+      )
+    )
+  );
+}
+
+function UntappedOpportunities({ opportunities }) {
+  if (!opportunities || opportunities.length === 0) return null;
+  return h('div', { className: 'card', style: { marginBottom: 24 } },
+    h('div', { className: 'card-header' },
+      h('div', { className: 'card-title' }, 'Untapped Opportunities · Trade Data'),
+      h('div', { className: 'card-badge', style: { background: 'var(--accent-purple-dim)', color: 'var(--accent-purple)' } }, opportunities.length+'+ HS codes unscored')
+    ),
+    h('div', { className: 'card-body' },
+      h('div', { className: 'opp-row tbl-header' },
+        h('div', null, 'Description'), h('div', { style: { textAlign: 'right' } }, 'Import $'),
+        h('div', { style: { textAlign: 'right' } }, 'CAGR'), h('div', { style: { textAlign: 'center' } }, 'Trend')
+      ),
+      opportunities.slice(0,20).map((o,i) =>
+        h('div', { className: 'opp-row', key: i },
+          h('div', { className: 'opp-desc', title: o.hs_code+' - '+o.description },
+            h('span', { style: { color: 'var(--accent-gold)', fontFamily: 'var(--mono)', fontSize: '10px' } }, o.hs_code+' '),
+            o.description
+          ),
+          h('div', { className: 'opp-val' }, fmtUsd(parseFloat(o.import_value_usd) * 1e6)),
+          h('div', { className: 'opp-cagr', style: { color: parseFloat(o.cagr_5yr) > 20 ? 'var(--accent-green)' : 'var(--text-secondary)' } },
+            parseFloat(o.cagr_5yr) >= 999 ? '∞' : parseFloat(o.cagr_5yr).toFixed(0)+'%'
+          ),
+          h('div', { className: 'trend-tag '+(o.trend_direction==='accelerating'?'trend-acc':o.trend_direction==='decelerating'?'trend-dec':'trend-stab'), style: { textAlign: 'center', fontSize: '10px' } },
+            o.trend_direction==='accelerating'?'▲ ACC':o.trend_direction==='decelerating'?'▼ DEC':'— FLAT'
+          )
+        )
+      )
+    )
+  );
+}
+
 function App() {
   const [products, setProducts] = useState([]);
   const [activity, setActivity] = useState([]);
   const [evidence, setEvidence] = useState([]);
   const [qaReviews, setQaReviews] = useState([]);
   const [counts, setCounts] = useState({ evidence: 0, qa: 0, attempts: 0 });
+  const [opportunities, setOpportunities] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selected, setSelected] = useState(null);
   const [tab, setTab] = useState('all');
+  const [sideTab, setSideTab] = useState('activity');
   const [refreshing, setRefreshing] = useState(false);
   const [lastRefresh, setLastRefresh] = useState(null);
 
   const loadData = useCallback(async () => {
     try {
-      const [prods, acts, evid, qar] = await Promise.all([
+      const [prods, acts, evid, qar, opps] = await Promise.all([
         sb('products', '?select=*&order=tvs_score.desc'),
         sb('activity_log', '?order=created_at.desc&limit=20'),
-        sb('evidence_sources', '?select=id,product_id,source_type,source_url,source_domain,claim,confidence,tvs_dimension&order=created_at.desc'),
+        sb('evidence_sources', '?select=id,product_id,hs_code,source_type,source_url,source_domain,claim,confidence,tvs_dimension&order=created_at.desc'),
         sb('qa_reviews', '?select=*&order=created_at.desc'),
+        sb('untapped_opportunities', '?order=import_value_usd.desc&limit=30').catch(() => []),
       ]);
       // Get counts
       const evCount = evid.length;
@@ -514,6 +608,7 @@ function App() {
       setActivity(acts);
       setEvidence(evid);
       setQaReviews(qar);
+      setOpportunities(opps);
       setCounts({ evidence: evCount, qa: qaCount, attempts: attRes.length });
       setLastRefresh(new Date());
       setError(null);
@@ -544,18 +639,9 @@ function App() {
       h(KpiRow, { products, evidence: counts.evidence, qaReviews: counts.qa, attempts: counts.attempts }),
       h('div', { className: 'grid-2col' },
         h(ProductTable, { products, onSelect: setSelected, tab, setTab }),
-        h('div', { className: 'card' },
-          h('div', { className: 'card-header' },
-            h('div', { className: 'card-title' }, 'Agent Activity'),
-            h('div', { className: 'card-badge', style: { background: 'var(--accent-gold-dim)', color: 'var(--accent-gold)' } }, activity.length+' actions')
-          ),
-          h('div', { className: 'card-body', style: { maxHeight: '600px', overflowY: 'auto' } },
-            activity.length === 0
-              ? h('div', { className: 'loading-state' }, 'No agent activity yet')
-              : h(ActivityFeed, { activity })
-          )
-        )
+        h(RightSidebar, { activity, evidence, qaReviews, sideTab, setSideTab })
       ),
+      h(UntappedOpportunities, { opportunities }),
       h('div', { className: 'footer' }, 'Kalash EXIM Mission Control v3 · Supabase ↔ Dawn Agent Squad · Est. 1978 Kamothe, Navi Mumbai')
     ),
     h(Scorecard, { product: selected, onClose: () => setSelected(null), evidence, qaReviews })
