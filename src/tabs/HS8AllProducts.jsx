@@ -10,6 +10,23 @@ const tierBadge = t => {
   const c = { TIER_1_PREMIUM: '#34d399', TIER_2_HIGH: '#60a5fa', TIER_3_SOLID: '#fbbf24' }[t];
   return t ? <span style={{ background: `${c}22`, color: c, border: `1px solid ${c}44`, padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600 }}>{t?.replace('TIER_1_','').replace('TIER_2_','').replace('TIER_3_','')}</span> : '—';
 };
+// Fix MT→KG unit mismatch: Volza unit_rate for bulk chemicals is per metric ton, but
+// landed cost was calculated as per-KG, while IndiaMART prices are per KG.
+// Detect: landed_cost > 10x sell_price AND weight-based unit → divide landed by 1000.
+const getAdj = (r) => {
+  const landed = r.median_landed_cost_inr;
+  const sell = r.price_consensus_inr;
+  if (!landed || !sell || sell <= 0) return { margin: r.real_margin_pct, marginInr: r.real_margin_inr, landed, verdict: r.margin_verdict, fix: false };
+  const ratio = landed / sell;
+  if (ratio > 10 && ['KGS', 'MTS', 'UNKNOWN'].includes(r.dominant_unit)) {
+    const adjLanded = landed / 1000;
+    const adjMargin = ((sell - adjLanded) / sell) * 100;
+    const adjMarginInr = sell - adjLanded;
+    const adjVerdict = adjMargin > 40 ? 'EXCELLENT' : adjMargin > 25 ? 'GOOD' : adjMargin > 15 ? 'MODERATE' : adjMargin > 10 ? 'THIN' : 'NEGATIVE';
+    return { margin: Math.round(adjMargin * 10) / 10, marginInr: Math.round(adjMarginInr), landed: Math.round(adjLanded * 10) / 10, verdict: adjVerdict, fix: true };
+  }
+  return { margin: r.real_margin_pct, marginInr: r.real_margin_inr, landed, verdict: r.margin_verdict, fix: false };
+};
 
 export default function HS8AllProducts() {
   const [data, setData] = useState([]);
@@ -36,7 +53,7 @@ export default function HS8AllProducts() {
       const s = search.toLowerCase();
       f = f.filter(r => r.hs8?.toLowerCase().includes(s) || r.hs4?.toLowerCase().includes(s) || r.commodity?.toLowerCase().includes(s));
     }
-    if (verdictFilter !== 'All') f = f.filter(r => r.margin_verdict === verdictFilter);
+    if (verdictFilter !== 'All') f = f.filter(r => getAdj(r).verdict === verdictFilter);
     if (statusFilter !== 'All') f = f.filter(r => r.selling_price_research_status === statusFilter);
     if (hs4Filter !== 'All') f = f.filter(r => r.hs4 === hs4Filter);
     f.sort((a, b) => {
@@ -50,16 +67,17 @@ export default function HS8AllProducts() {
   }, [data, search, verdictFilter, statusFilter, hs4Filter, sortCol, sortDir]);
 
   const stats = useMemo(() => {
-    const withMargin = data.filter(r => r.real_margin_pct != null);
+    const adjData = data.map(r => ({ ...r, _adj: getAdj(r) }));
+    const withMargin = adjData.filter(r => r._adj.margin != null);
     return {
       total: data.length,
       researched: data.filter(r => r.selling_price_research_status === 'completed').length,
       noData: data.filter(r => r.selling_price_research_status === 'no_data').length,
-      excellent: data.filter(r => r.margin_verdict === 'EXCELLENT').length,
-      good: data.filter(r => r.margin_verdict === 'GOOD').length,
-      moderate: data.filter(r => r.margin_verdict === 'MODERATE').length,
-      negative: data.filter(r => r.margin_verdict === 'NEGATIVE' || r.margin_verdict === 'THIN').length,
-      avgMargin: withMargin.length ? (withMargin.reduce((s, r) => s + r.real_margin_pct, 0) / withMargin.length).toFixed(1) : '—',
+      excellent: adjData.filter(r => r._adj.verdict === 'EXCELLENT').length,
+      good: adjData.filter(r => r._adj.verdict === 'GOOD').length,
+      moderate: adjData.filter(r => r._adj.verdict === 'MODERATE').length,
+      negative: adjData.filter(r => r._adj.verdict === 'NEGATIVE' || r._adj.verdict === 'THIN').length,
+      avgMargin: withMargin.length ? (withMargin.reduce((s, r) => s + (r._adj.margin || 0), 0) / withMargin.length).toFixed(1) : '—',
     };
   }, [data]);
 
@@ -185,12 +203,12 @@ export default function HS8AllProducts() {
                 <td style={{ padding: '7px 6px', fontWeight: 600, color: '#60a5fa', fontFamily: 'monospace' }}>{r.hs8}</td>
                 <td style={{ padding: '7px 6px', color: '#94a3b8', fontFamily: 'monospace' }}>{r.hs4}</td>
                 <td style={{ padding: '7px 6px', color: '#e2e8f0', maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.commodity}>{r.commodity}</td>
-                {view === 'overview' && <>
-                  <td style={{ padding: '7px 6px', color: verdictColor(r.margin_verdict), fontWeight: 700 }}>{fmtPct(r.real_margin_pct)}</td>
-                  <td style={{ padding: '7px 6px' }}><span style={{ color: verdictColor(r.margin_verdict), background: `${verdictColor(r.margin_verdict)}22`, padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600 }}>{r.margin_verdict || '—'}</span></td>
-                  <td style={{ padding: '7px 6px', color: '#e2e8f0' }}>{fmtINR(r.median_landed_cost_inr)}</td>
+                {view === 'overview' && (() => { const a = getAdj(r); return <>
+                  <td style={{ padding: '7px 6px', color: verdictColor(a.verdict), fontWeight: 700 }}>{fmtPct(a.margin)}{a.fix && <span title="MT→KG corrected" style={{ marginLeft: 4, fontSize: 9, color: '#fbbf24' }}>⚠️</span>}</td>
+                  <td style={{ padding: '7px 6px' }}><span style={{ color: verdictColor(a.verdict), background: `${verdictColor(a.verdict)}22`, padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600 }}>{a.verdict || '—'}</span></td>
+                  <td style={{ padding: '7px 6px', color: '#e2e8f0' }}>{fmtINR(a.landed)}{a.fix && <span title="÷1000 (MT→KG)" style={{ marginLeft: 4, fontSize: 9, color: '#fbbf24' }}>⚠️</span>}</td>
                   <td style={{ padding: '7px 6px', color: '#34d399' }}>{fmtINR(r.price_consensus_inr)}</td>
-                  <td style={{ padding: '7px 6px', color: r.real_margin_inr > 0 ? '#34d399' : '#f87171', fontWeight: 600 }}>{fmtINR(r.real_margin_inr)}</td>
+                  <td style={{ padding: '7px 6px', color: a.marginInr > 0 ? '#34d399' : '#f87171', fontWeight: 600 }}>{fmtINR(a.marginInr)}</td>
                   <td style={{ padding: '7px 6px', color: '#fbbf24' }}>{fmtUSD(r.total_cif_usd)}</td>
                   <td style={{ padding: '7px 6px', color: '#94a3b8' }}>{fmt(r.shipment_count)}</td>
                   <td style={{ padding: '7px 6px', color: '#94a3b8' }}>{fmt(r.unique_buyers)}</td>
@@ -198,35 +216,35 @@ export default function HS8AllProducts() {
                   <td style={{ padding: '7px 6px' }}>{tierBadge(r.shortlist_tier)}</td>
                   <td style={{ padding: '7px 6px', color: '#94a3b8' }}>{r.source_count || '—'}</td>
                   <td style={{ padding: '7px 6px' }}><span style={{ color: r.price_confidence === 'HIGH' ? '#34d399' : r.price_confidence === 'MEDIUM' ? '#fbbf24' : '#f87171', fontSize: 11 }}>{r.price_confidence || '—'}</span></td>
-                </>}
-                {view === 'margins' && <>
+                </>; })()}
+                {view === 'margins' && (() => { const a = getAdj(r); return <>
                   <td style={{ padding: '7px 6px', color: '#60a5fa' }}>{r.median_unit_rate_usd != null ? '$' + Number(r.median_unit_rate_usd).toFixed(2) : '—'}</td>
                   <td style={{ padding: '7px 6px', color: '#fbbf24' }}>{fmtPct(r.total_duty_pct)}</td>
-                  <td style={{ padding: '7px 6px', color: '#e2e8f0' }}>{fmtINR(r.median_landed_cost_inr)}</td>
+                  <td style={{ padding: '7px 6px', color: '#e2e8f0' }}>{fmtINR(a.landed)}{a.fix && <span title="÷1000 (MT→KG)" style={{ marginLeft: 4, fontSize: 9, color: '#fbbf24' }}>⚠️</span>}</td>
                   <td style={{ padding: '7px 6px', color: '#34d399' }}>{fmtINR(r.price_consensus_inr)}</td>
-                  <td style={{ padding: '7px 6px', color: verdictColor(r.margin_verdict), fontWeight: 700 }}>{fmtPct(r.real_margin_pct)}</td>
-                  <td style={{ padding: '7px 6px', color: r.real_margin_inr > 0 ? '#34d399' : '#f87171', fontWeight: 600 }}>{fmtINR(r.real_margin_inr)}</td>
-                  <td style={{ padding: '7px 6px' }}><span style={{ color: verdictColor(r.margin_verdict), fontSize: 11, fontWeight: 600 }}>{r.margin_verdict || '—'}</span></td>
+                  <td style={{ padding: '7px 6px', color: verdictColor(a.verdict), fontWeight: 700 }}>{fmtPct(a.margin)}{a.fix && <span title="MT→KG corrected" style={{ marginLeft: 4, fontSize: 9, color: '#fbbf24' }}>⚠️</span>}</td>
+                  <td style={{ padding: '7px 6px', color: a.marginInr > 0 ? '#34d399' : '#f87171', fontWeight: 600 }}>{fmtINR(a.marginInr)}</td>
+                  <td style={{ padding: '7px 6px' }}><span style={{ color: verdictColor(a.verdict), fontSize: 11, fontWeight: 600 }}>{a.verdict || '—'}</span></td>
                   <td style={{ padding: '7px 6px', color: '#fbbf24' }}>{fmtUSD(r.total_cif_usd)}</td>
                   <td style={{ padding: '7px 6px', color: '#94a3b8' }}>{fmt(r.unique_buyers)}</td>
                   <td style={{ padding: '7px 6px', color: '#94a3b8', fontSize: 11 }}>{r.dominant_unit || '—'}</td>
                   <td style={{ padding: '7px 6px' }}>{r.unit_matched ? '✅' : r.unit_matched === false ? '❌' : '—'}</td>
                   <td style={{ padding: '7px 6px' }}>{r.shortlisted ? '🏆' : '—'}</td>
-                </>}
-                {view === 'prices' && <>
-                  <td style={{ padding: '7px 6px', color: '#e2e8f0' }}>{fmtINR(r.median_landed_cost_inr)}</td>
+                </>; })()}
+                {view === 'prices' && (() => { const a = getAdj(r); return <>
+                  <td style={{ padding: '7px 6px', color: '#e2e8f0' }}>{fmtINR(a.landed)}{a.fix && <span title="÷1000 (MT→KG)" style={{ marginLeft: 4, fontSize: 9, color: '#fbbf24' }}>⚠️</span>}</td>
                   <td style={{ padding: '7px 6px', color: r.indiamart_sell_price_inr ? '#34d399' : '#64748b' }}>{fmtINR(r.indiamart_sell_price_inr)}</td>
                   <td style={{ padding: '7px 6px', color: r.tradeindia_sell_price_inr ? '#60a5fa' : '#64748b' }}>{fmtINR(r.tradeindia_sell_price_inr)}</td>
                   <td style={{ padding: '7px 6px', color: r.amazon_sell_price_inr ? '#fbbf24' : '#64748b' }}>{fmtINR(r.amazon_sell_price_inr)}</td>
                   <td style={{ padding: '7px 6px', color: r.moglix_sell_price_inr ? '#a78bfa' : '#64748b' }}>{fmtINR(r.moglix_sell_price_inr)}</td>
                   <td style={{ padding: '7px 6px', color: r.industbuy_sell_price_inr ? '#fb923c' : '#64748b' }}>{fmtINR(r.industbuy_sell_price_inr)}</td>
                   <td style={{ padding: '7px 6px', color: '#34d399', fontWeight: 600 }}>{fmtINR(r.price_consensus_inr)}</td>
-                  <td style={{ padding: '7px 6px', color: verdictColor(r.margin_verdict), fontWeight: 700 }}>{fmtPct(r.real_margin_pct)}</td>
-                  <td style={{ padding: '7px 6px' }}><span style={{ color: verdictColor(r.margin_verdict), fontSize: 11 }}>{r.margin_verdict || '—'}</span></td>
+                  <td style={{ padding: '7px 6px', color: verdictColor(a.verdict), fontWeight: 700 }}>{fmtPct(a.margin)}{a.fix && <span title="MT→KG corrected" style={{ marginLeft: 4, fontSize: 9, color: '#fbbf24' }}>⚠️</span>}</td>
+                  <td style={{ padding: '7px 6px' }}><span style={{ color: verdictColor(a.verdict), fontSize: 11 }}>{a.verdict || '—'}</span></td>
                   <td style={{ padding: '7px 6px', color: '#94a3b8' }}>{r.source_count || '—'}</td>
                   <td style={{ padding: '7px 6px' }}><span style={{ color: r.price_confidence === 'HIGH' ? '#34d399' : r.price_confidence === 'MEDIUM' ? '#fbbf24' : '#f87171', fontSize: 11 }}>{r.price_confidence || '—'}</span></td>
                   <td style={{ padding: '7px 6px' }}><span style={{ color: r.selling_price_research_status === 'completed' ? '#34d399' : '#64748b', fontSize: 11 }}>{r.selling_price_research_status || '—'}</span></td>
-                </>}
+                </>; })()}
               </tr>
             ))}
           </tbody>
