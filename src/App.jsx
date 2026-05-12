@@ -14,6 +14,8 @@ import SellingPriceResearch from './tabs/SellingPriceResearch';
 import HS8MarginDetail from './tabs/HS8MarginDetail';
 import ElectronicsPriority from './tabs/ElectronicsPriority';
 import HS8Shortlist from './tabs/HS8Shortlist';
+import HS8AllProducts from './tabs/HS8AllProducts';
+import HS8VolzaDetail from './tabs/HS8VolzaDetail';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('overview');
@@ -42,6 +44,8 @@ export default function App() {
         { id: 'hs8detail', label: '🔬 HS8 Deep Dive' },
         { id: 'elecpriority', label: '⚡ Electronics Top 30' },
         { id: 'shortlist', label: '🏆 Shortlist' },
+        { id: 'allhs8', label: '📦 All HS8' },
+        { id: 'volzadetail', label: '🔍 Volza Detail' },
       ],
     },
     {
@@ -78,6 +82,8 @@ export default function App() {
       case 'hs8detail': return <HS8MarginDetail />;
       case 'elecpriority': return <ElectronicsPriority />;
       case 'shortlist': return <HS8Shortlist />;
+      case 'allhs8': return <HS8AllProducts />;
+      case 'volzadetail': return <HS8VolzaDetail />;
       case 'buyers': return <BuyerIntelligence />;
       case 'shipments': return <ShipmentAnalytics />;
       case 'hierarchy': return <HSExplorer />;
