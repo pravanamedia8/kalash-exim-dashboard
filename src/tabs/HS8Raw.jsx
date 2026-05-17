@@ -3,18 +3,13 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
 import { supabase } from '../supabaseClient';
+import SearchFilter from '../components/SearchFilter';
 
 const HS8Raw = () => {
   const [hs8Data, setHs8Data] = useState([]);
+  const [filtered, setFiltered] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-
-  // Filter states
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedHs2, setSelectedHs2] = useState('All');
-  const [selectedHs4, setSelectedHs4] = useState('All');
-  const [growthFilter, setGrowthFilter] = useState('All');
-  const [valueFilter, setValueFilter] = useState('All');
 
   // Sort and pagination states
   const [sortConfig, setSortConfig] = useState({ key: 'val_2024_25', direction: 'desc' });
@@ -41,51 +36,8 @@ const HS8Raw = () => {
     loadData();
   }, []);
 
-  // Get unique HS2 codes
-  const hs2Codes = ['All', ...new Set(hs8Data.map((item) => item.hs2).filter(Boolean))].sort();
-
-  // Get unique HS4 codes for selected HS2
-  const hs4Codes = selectedHs2 === 'All'
-    ? ['All', ...new Set(hs8Data.map((item) => item.hs4).filter(Boolean))].sort()
-    : ['All', ...new Set(hs8Data.filter((item) => item.hs2 === selectedHs2).map((item) => item.hs4).filter(Boolean))].sort();
-
-  // Filter data
-  const filteredData = hs8Data.filter((item) => {
-    const matchesSearch =
-      item.hs8.toString().includes(searchTerm) ||
-      item.hs6.toString().includes(searchTerm) ||
-      item.hs4.toString().includes(searchTerm) ||
-      item.hs2.toString().includes(searchTerm) ||
-      (item.commodity && item.commodity.toLowerCase().includes(searchTerm.toLowerCase()));
-
-    const matchesHs2 = selectedHs2 === 'All' || item.hs2 === selectedHs2;
-    const matchesHs4 = selectedHs4 === 'All' || item.hs4 === selectedHs4;
-
-    let matchesGrowth = true;
-    const growth1yr = item.growth_1yr || 0;
-    if (growthFilter === 'Positive') {
-      matchesGrowth = growth1yr > 0;
-    } else if (growthFilter === 'Negative') {
-      matchesGrowth = growth1yr < 0;
-    } else if (growthFilter === '>50%') {
-      matchesGrowth = growth1yr > 50;
-    }
-
-    let matchesValue = true;
-    const val2024_25 = item.val_2024_25 || 0;
-    if (valueFilter === '>0') {
-      matchesValue = val2024_25 > 0;
-    } else if (valueFilter === '>$1M') {
-      matchesValue = val2024_25 > 1;
-    } else if (valueFilter === '>$10M') {
-      matchesValue = val2024_25 > 10;
-    }
-
-    return matchesSearch && matchesHs2 && matchesHs4 && matchesGrowth && matchesValue;
-  });
-
   // Sort data
-  const sortedData = [...filteredData].sort((a, b) => {
+  const sortedData = [...filtered].sort((a, b) => {
     const aVal = a[sortConfig.key];
     const bVal = b[sortConfig.key];
     if (aVal === undefined || aVal === null) return 1;
@@ -146,11 +98,6 @@ const HS8Raw = () => {
     return value > 0 ? '#34d399' : '#f87171';
   };
 
-  // Reset HS4 when HS2 changes
-  useEffect(() => {
-    setSelectedHs4('All');
-  }, [selectedHs2]);
-
   if (loading) {
     return <div className="loading">⏳ Loading HS8 Raw Data...</div>;
   }
@@ -186,69 +133,16 @@ const HS8Raw = () => {
       </div>
 
       {/* Filters Row */}
-      <div className="filters">
-        <input
-          type="text"
-          className="filter-input"
-          placeholder="Search by HS8/HS6/HS4/HS2 code or commodity..."
-          value={searchTerm}
-          onChange={(e) => {
-            setSearchTerm(e.target.value);
-            setCurrentPage(1);
-          }}
-        />
-        <select
-          className="filter-select"
-          value={selectedHs2}
-          onChange={(e) => setSelectedHs2(e.target.value)}
-        >
-          {hs2Codes.map((code) => (
-            <option key={code} value={code}>
-              {code === 'All' ? 'All HS2 Chapters' : `HS2: ${code}`}
-            </option>
-          ))}
-        </select>
-        <select
-          className="filter-select"
-          value={selectedHs4}
-          onChange={(e) => {
-            setSelectedHs4(e.target.value);
-            setCurrentPage(1);
-          }}
-        >
-          {hs4Codes.map((code) => (
-            <option key={code} value={code}>
-              {code === 'All' ? 'All HS4 Codes' : `HS4: ${code}`}
-            </option>
-          ))}
-        </select>
-        <select
-          className="filter-select"
-          value={growthFilter}
-          onChange={(e) => {
-            setGrowthFilter(e.target.value);
-            setCurrentPage(1);
-          }}
-        >
-          <option value="All">All Growth</option>
-          <option value="Positive">Positive</option>
-          <option value="Negative">Negative</option>
-          <option value=">50%">High (&gt;50%)</option>
-        </select>
-        <select
-          className="filter-select"
-          value={valueFilter}
-          onChange={(e) => {
-            setValueFilter(e.target.value);
-            setCurrentPage(1);
-          }}
-        >
-          <option value="All">All Values</option>
-          <option value=">0">Value &gt;0</option>
-          <option value=">$1M">Value &gt;$1M</option>
-          <option value=">$10M">Value &gt;$10M</option>
-        </select>
-      </div>
+      <SearchFilter
+        data={hs8Data}
+        onFilter={setFiltered}
+        searchFields={['hs8', 'hs6', 'hs4', 'hs2', 'commodity']}
+        filters={[
+          { key: 'hs2', label: 'HS2' },
+          { key: 'hs4', label: 'HS4' },
+        ]}
+        placeholder="Search by HS8/HS6/HS4/HS2 code or commodity..."
+      />
 
       {/* Top 30 Chart */}
       <div className="chart-container">

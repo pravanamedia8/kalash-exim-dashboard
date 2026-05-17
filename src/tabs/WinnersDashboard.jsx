@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import SearchFilter from '../components/SearchFilter';
 
 const card = {background:'rgba(17,24,39,0.8)', border:'1px solid rgba(148,163,184,0.1)', borderRadius:12, padding:20};
 
@@ -8,6 +9,7 @@ export default function WinnersDashboard() {
   const [winners, setWinners] = useState([]);
   const [loading, setLoading] = useState(true);
   const [sort, setSort] = useState({col:'real_margin_pct',dir:'desc'});
+  const [filtered, setFiltered] = useState([]);
 
   useEffect(() => {
     supabase.from('hs8_margin_analysis').select('*').in('margin_verdict',['EXCELLENT','GOOD']).order('real_margin_pct',{ascending:false}).then(({data})=>{ setWinners(data||[]); setLoading(false); });
@@ -34,7 +36,7 @@ export default function WinnersDashboard() {
     {label:'CIF Pool',value:`$${(totalCIF/1e9).toFixed(1)}B`,color:'#a78bfa'},
   ];
 
-  let sorted = [...winners];
+  let sorted = [...filtered];
   sorted.sort((a,b)=>{
     let av=a[sort.col]??-Infinity, bv=b[sort.col]??-Infinity;
     if(av<bv) return sort.dir==='asc'?-1:1;
@@ -56,6 +58,8 @@ export default function WinnersDashboard() {
         ))}
       </div>
 
+      <SearchFilter data={winners} onFilter={setFiltered} searchFields={['commodity','hs8','hs4']} filters={[{key:'margin_verdict',label:'Verdict'},{key:'hs4',label:'HS4'}]} placeholder="Search winners..." />
+
       <div style={{...card,marginBottom:24}}>
         <h3 style={{color:'#e2e8f0',fontSize:14,marginBottom:16}}>Top 20 Winners by Margin %</h3>
         <ResponsiveContainer width="100%" height={300}>
@@ -67,7 +71,7 @@ export default function WinnersDashboard() {
       </div>
 
       <div style={card}>
-        <h3 style={{color:'#e2e8f0',fontSize:14,marginBottom:16}}>Winner Products ({winners.length})</h3>
+        <h3 style={{color:'#e2e8f0',fontSize:14,marginBottom:16}}>Winner Products ({filtered.length})</h3>
         <div style={{maxHeight:500,overflowY:'auto'}}>
           <table style={{width:'100%',borderCollapse:'collapse'}}>
             <thead><tr>

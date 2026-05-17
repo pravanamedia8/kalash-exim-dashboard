@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from 'recharts';
+import SearchFilter from '../components/SearchFilter';
 
 const card = {background:'rgba(17,24,39,0.8)',border:'1px solid rgba(148,163,184,0.1)',borderRadius:12,padding:20};
 const MV = {EXCELLENT:'#34d399',GOOD:'#60a5fa',MODERATE:'#fbbf24',THIN:'#f59e0b',NEGATIVE:'#f87171'};
@@ -11,8 +12,7 @@ export default function SellingPriceResearch() {
   const [sources, setSources] = useState([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState('overview');
-  const [filter, setFilter] = useState('all');
-  const [search, setSearch] = useState('');
+  const [sfFiltered, setSfFiltered] = useState([]);
   const [sort, setSort] = useState({col:'total_cif_usd',dir:'desc'});
   const [expanded, setExpanded] = useState(null);
 
@@ -82,12 +82,7 @@ export default function SellingPriceResearch() {
   const sourceData = Object.entries(srcMap).map(([name,count])=>({name,count})).sort((a,b)=>b.count-a.count);
 
   // Filtered table data
-  let filtered = data;
-  if (filter==='done') filtered = filtered.filter(r=>r.selling_price_research_status==='done'||r.selling_price_research_status==='completed');
-  else if (filter==='pending') filtered = filtered.filter(r=>r.selling_price_research_status==='pending');
-  else if (filter==='winners') filtered = filtered.filter(r=>r.margin_verdict==='EXCELLENT'||r.margin_verdict==='GOOD');
-  else if (filter==='negative') filtered = filtered.filter(r=>r.margin_verdict==='NEGATIVE');
-  if (search) filtered = filtered.filter(r=>(r.hs8+' '+r.hs4+' '+(r.commodity||'')).toLowerCase().includes(search.toLowerCase()));
+  let filtered = [...sfFiltered];
   filtered.sort((a,b)=>{
     let av=a[sort.col]??-Infinity, bv=b[sort.col]??-Infinity;
     return sort.dir==='desc' ? (bv>av?1:bv<av?-1:0) : (av>bv?1:av<bv?-1:0);
@@ -209,14 +204,7 @@ export default function SellingPriceResearch() {
 
       {view==='table' && (
         <div style={card}>
-          {/* Filters */}
-          <div style={{display:'flex',gap:8,marginBottom:12,flexWrap:'wrap',alignItems:'center'}}>
-            <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search HS8, HS4, commodity..." style={{padding:'6px 12px',borderRadius:8,border:'1px solid rgba(148,163,184,0.2)',background:'rgba(0,0,0,0.3)',color:'#e2e8f0',fontSize:12,width:250}} />
-            {['all','done','pending','winners','negative'].map(f => (
-              <button key={f} onClick={()=>setFilter(f)} style={{padding:'4px 12px',borderRadius:6,border:'1px solid',borderColor:filter===f?'#4f8cff':'rgba(148,163,184,0.15)',background:filter===f?'rgba(79,140,255,0.12)':'transparent',color:filter===f?'#60a5fa':'#64748b',fontSize:11,cursor:'pointer'}}>{f==='all'?`All (${total})`:f==='done'?`Done (${done})`:f==='pending'?`Pending (${pending})`:f==='winners'?`Winners (${excellent+good})`:`Negative (${negative})`}</button>
-            ))}
-            <span style={{color:'#64748b',fontSize:11,marginLeft:'auto'}}>Showing {filtered.length} of {total}</span>
-          </div>
+          <SearchFilter data={data} onFilter={setSfFiltered} searchFields={['hs8','hs4','commodity']} filters={[{key:'margin_verdict',label:'Verdict'},{key:'selling_price_research_status',label:'Status'}]} placeholder="Search HS8, HS4, commodity..." counts />
 
           <div style={{maxHeight:'65vh',overflowY:'auto',overflowX:'auto'}}>
             <table style={{width:'100%',borderCollapse:'collapse',minWidth:1200}}>

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
 import { supabase } from '../supabaseClient';
+import SearchFilter from '../components/SearchFilter';
 
 const COLORS = ['#4f8cff','#34d399','#fbbf24','#f87171','#a78bfa','#fb923c'];
 
@@ -82,6 +83,7 @@ export default function ScoringRef() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [config, setConfig] = useState([]);
+  const [filteredConfig, setFilteredConfig] = useState([]);
 
   useEffect(() => {
     supabase.from('scoring_config').select('*')
@@ -236,13 +238,20 @@ export default function ScoringRef() {
 
       <div className="card">
         <div className="card-title">📊 Detailed Scoring Reference</div>
+        <SearchFilter
+          data={config}
+          onFilter={setFilteredConfig}
+          searchFields={['factor','description']}
+          filters={[{key:'phase',label:'Phase'}]}
+          placeholder="Search scoring factors..."
+        />
         <div className="g2">
           <div>
             <div style={{fontSize:'12px',fontWeight:600,color:'var(--tx)',marginBottom:'12px',textTransform:'uppercase',letterSpacing:'0.5px'}}>HS2 Chapter Factors ({hs2Total} pts)</div>
             <table style={{fontSize:'11px'}}>
               <thead><tr><th>Factor</th><th style={{textAlign:'right'}}>Pts</th><th style={{textAlign:'right'}}>%</th></tr></thead>
               <tbody>
-                {hs2Config.map((c, idx) => (
+                {filteredConfig.filter(c => c.phase === 'HS2').map((c, idx) => (
                   <tr key={idx}>
                     <td style={{fontWeight:500}}>{c.factor}</td>
                     <td style={{textAlign:'right',fontWeight:600,color:'var(--blue)'}}>{c.max_points}</td>
@@ -262,7 +271,7 @@ export default function ScoringRef() {
             <table style={{fontSize:'11px'}}>
               <thead><tr><th>Factor</th><th style={{textAlign:'right'}}>Pts</th><th style={{textAlign:'right'}}>%</th></tr></thead>
               <tbody>
-                {hs4Config.map((c, idx) => (
+                {filteredConfig.filter(c => c.phase === 'HS4').map((c, idx) => (
                   <tr key={idx}>
                     <td style={{fontWeight:500}}>{c.factor}</td>
                     <td style={{textAlign:'right',fontWeight:600,color:'var(--green)'}}>{c.max_points}</td>

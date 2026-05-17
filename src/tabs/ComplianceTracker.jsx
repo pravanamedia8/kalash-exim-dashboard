@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../supabaseClient';
+import SearchFilter from '../components/SearchFilter';
 
 const COLORS = { pass:'#34d399', maybe:'#fbbf24', drop:'#f87171', blue:'#60a5fa', cyan:'#22d3ee', orange:'#fb923c', purple:'#a78bfa' };
 const RGB = { pass:'rgba(52,211,153,0.12)', maybe:'rgba(251,191,36,0.12)', drop:'rgba(248,113,113,0.12)', blue:'rgba(96,165,250,0.12)', cyan:'rgba(34,211,238,0.12)', orange:'rgba(251,146,60,0.12)', purple:'rgba(167,139,250,0.12)' };
@@ -26,9 +27,7 @@ const KPI = ({ label, value, color='#60a5fa' }) => (
 export default function ComplianceTracker() {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const [typeFilter, setTypeFilter] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
+  const [filtered, setFiltered] = useState([]);
   const [sortCol, setSortCol] = useState('hs4');
   const [sortDir, setSortDir] = useState('asc');
 
@@ -40,25 +39,21 @@ export default function ComplianceTracker() {
     })();
   }, []);
 
-  const types = useMemo(() => [...new Set(data.map(r=>r.cert_type).filter(Boolean))].sort(), [data]);
   const statusCounts = useMemo(() => {
     const c = {};
     data.forEach(r => { c[r.status] = (c[r.status]||0)+1; });
     return c;
   }, [data]);
 
-  const filtered = useMemo(() => {
-    let f = data;
-    if (search) f = f.filter(r => (r.hs4||'').includes(search) || (r.product_desc||'').toLowerCase().includes(search.toLowerCase()) || (r.cert_type||'').toLowerCase().includes(search.toLowerCase()));
-    if (typeFilter) f = f.filter(r => r.cert_type === typeFilter);
-    if (statusFilter) f = f.filter(r => r.status === statusFilter);
-    f = [...f].sort((a,b) => {
+  const types = useMemo(() => [...new Set(data.map(r=>r.cert_type).filter(Boolean))].sort(), [data]);
+
+  const sorted = useMemo(() => {
+    return [...filtered].sort((a,b) => {
       const av = a[sortCol], bv = b[sortCol];
       if (av == null) return 1; if (bv == null) return -1;
       return sortDir === 'asc' ? (av > bv ? 1 : -1) : (av < bv ? 1 : -1);
     });
-    return f;
-  }, [data, search, typeFilter, statusFilter, sortCol, sortDir]);
+  }, [filtered, sortCol, sortDir]);
 
   const handleSort = col => { if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setSortCol(col); setSortDir('asc'); } };
 
@@ -96,18 +91,7 @@ export default function ComplianceTracker() {
       </div>
 
       {/* Filters */}
-      <div style={{ display:'flex', gap:'8px', flexWrap:'wrap', marginBottom:'12px', alignItems:'center' }}>
-        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search HS4, product, cert..." style={{ padding:'6px 10px', borderRadius:'6px', border:'1px solid rgba(148,163,184,0.15)', background:'#1a2035', color:'#e2e8f0', fontSize:'12px', width:'200px' }} />
-        <select value={typeFilter} onChange={e=>setTypeFilter(e.target.value)} style={{ padding:'6px 10px', borderRadius:'6px', border:'1px solid rgba(148,163,184,0.15)', background:'#1a2035', color:'#e2e8f0', fontSize:'12px' }}>
-          <option value="">All Types</option>
-          {types.map(t => <option key={t} value={t}>{t}</option>)}
-        </select>
-        <select value={statusFilter} onChange={e=>setStatusFilter(e.target.value)} style={{ padding:'6px 10px', borderRadius:'6px', border:'1px solid rgba(148,163,184,0.15)', background:'#1a2035', color:'#e2e8f0', fontSize:'12px' }}>
-          <option value="">All Status</option>
-          {['approved','in_progress','not_started','pending','expired','rejected'].map(s => <option key={s} value={s}>{s.replace(/_/g,' ')}</option>)}
-        </select>
-        <span style={{ color:'#94a3b8', fontSize:'12px' }}>{filtered.length} certs</span>
-      </div>
+      <SearchFilter data={data} onFilter={setFiltered} searchFields={['hs4','product_desc','cert_type']} filters={[{key:'cert_type',label:'Types'},{key:'status',label:'Status'}]} placeholder="Search HS4, product, cert..." />
 
       {/* Table */}
       <div style={{ overflowX:'auto' }}>
@@ -120,7 +104,7 @@ export default function ComplianceTracker() {
             ))}</tr>
           </thead>
           <tbody>
-            {filtered.slice(0,200).map((r,i) => (
+            {sorted.slice(0,200).map((r,i) => (
               <tr key={i} style={{ borderBottom:'1px solid rgba(148,163,184,0.05)' }}>
                 {columns.map(c => (
                   <td key={c.key} style={{ padding:'6px', color:'#e2e8f0', whiteSpace:'nowrap', maxWidth:'200px', overflow:'hidden', textOverflow:'ellipsis' }}>

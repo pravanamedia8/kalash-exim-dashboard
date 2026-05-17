@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { supabase } from '../supabaseClient';
+import SearchFilter from '../components/SearchFilter';
 
 const COLORS = ['#4f8cff','#34d399','#fbbf24','#f87171','#a78bfa','#fb923c','#22d3ee','#f472b6'];
 
@@ -22,9 +23,7 @@ export default function BuyersTargets() {
   const [loading, setLoading] = useState(true);
   const [targets, setTargets] = useState([]);
   const [buyers, setBuyers] = useState([]);
-  const [search, setSearch] = useState('');
-  const [classFilter, setClassFilter] = useState('all');
-  const [stateFilter, setStateFilter] = useState('all');
+  const [filtered, setFiltered] = useState([]);
   const [isMiddlemanFilter, setIsMiddlemanFilter] = useState('all');
   const [isTargetFilter, setIsTargetFilter] = useState('all');
   const [page, setPage] = useState(0);
@@ -43,36 +42,19 @@ export default function BuyersTargets() {
       .finally(() => setLoading(false));
   }, []);
 
-  const classifications = useMemo(() =>
-    [...new Set(buyers.map(b => b.classification).filter(Boolean))].sort(),
-    [buyers]
-  );
-
-  const states = useMemo(() =>
-    [...new Set(buyers.map(b => b.state).filter(Boolean))].sort(),
-    [buyers]
-  );
-
-  const filteredBuyers = useMemo(() => {
-    return buyers.filter(b => {
-      const matchSearch = !search ||
-        (b.company_name||'').toLowerCase().includes(search.toLowerCase()) ||
-        (b.iec||'').includes(search) ||
-        (b.city||'').toLowerCase().includes(search.toLowerCase());
-      const matchClass = classFilter === 'all' || b.classification === classFilter;
-      const matchState = stateFilter === 'all' || b.state === stateFilter;
+  const postFiltered = useMemo(() => {
+    return filtered.filter(b => {
       const matchMiddleman = isMiddlemanFilter === 'all' ||
         (isMiddlemanFilter === 'yes' ? b.is_middleman : !b.is_middleman);
       const matchTarget = isTargetFilter === 'all' ||
         (isTargetFilter === 'yes' ? b.is_target : !b.is_target);
-
-      return matchSearch && matchClass && matchState && matchMiddleman && matchTarget;
+      return matchMiddleman && matchTarget;
     });
-  }, [buyers, search, classFilter, stateFilter, isMiddlemanFilter, isTargetFilter]);
+  }, [filtered, isMiddlemanFilter, isTargetFilter]);
 
   const sortedBuyers = useMemo(() => {
-    return [...filteredBuyers].sort((a, b) => (b.total_cif_usd || 0) - (a.total_cif_usd || 0));
-  }, [filteredBuyers]);
+    return [...postFiltered].sort((a, b) => (b.total_cif_usd || 0) - (a.total_cif_usd || 0));
+  }, [postFiltered]);
 
   const totalPages = Math.ceil(sortedBuyers.length / PAGE_SIZE);
   const displayBuyers = sortedBuyers.slice(page * PAGE_SIZE, (page+1) * PAGE_SIZE);
@@ -259,33 +241,8 @@ export default function BuyersTargets() {
       {/* Filters Section */}
       <div className="card">
         <div className="card-title">👤 All Buyers ({sortedBuyers.length} of {buyers.length})</div>
-        <div className="filters" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', marginBottom: '16px' }}>
-          <input
-            type="text"
-            className="filter-input"
-            placeholder="Search company, IEC, city..."
-            value={search}
-            onChange={e=>{setSearch(e.target.value);setPage(0);}}
-            style={{ padding: '8px 12px', border: '1px solid var(--border)', borderRadius: '4px', background: 'var(--bg2)' }}
-          />
-          <select
-            className="filter-select"
-            value={classFilter}
-            onChange={e=>{setClassFilter(e.target.value);setPage(0);}}
-            style={{ padding: '8px 12px', border: '1px solid var(--border)', borderRadius: '4px', background: 'var(--bg2)' }}
-          >
-            <option value="all">All Classifications</option>
-            {classifications.map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
-          <select
-            className="filter-select"
-            value={stateFilter}
-            onChange={e=>{setStateFilter(e.target.value);setPage(0);}}
-            style={{ padding: '8px 12px', border: '1px solid var(--border)', borderRadius: '4px', background: 'var(--bg2)' }}
-          >
-            <option value="all">All States</option>
-            {states.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
+        <SearchFilter data={buyers} onFilter={setFiltered} searchFields={['company_name','iec','city']} filters={[{key:'classification',label:'Classification'},{key:'state',label:'State'}]} placeholder="Search company, IEC, city..." />
+        <div style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
           <select
             className="filter-select"
             value={isMiddlemanFilter}

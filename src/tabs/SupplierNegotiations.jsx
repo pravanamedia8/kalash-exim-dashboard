@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../supabaseClient';
+import SearchFilter from '../components/SearchFilter';
 
 const COLORS = { pass:'#34d399', maybe:'#fbbf24', drop:'#f87171', blue:'#60a5fa', cyan:'#22d3ee', orange:'#fb923c', purple:'#a78bfa' };
 const RGB = { pass:'rgba(52,211,153,0.12)', maybe:'rgba(251,191,36,0.12)', drop:'rgba(248,113,113,0.12)', blue:'rgba(96,165,250,0.12)', cyan:'rgba(34,211,238,0.12)', orange:'rgba(251,146,60,0.12)', purple:'rgba(167,139,250,0.12)' };
@@ -24,9 +25,7 @@ const KPI = ({ label, value, color='#60a5fa', sub='' }) => (
 export default function SupplierNegotiations() {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const [stageFilter, setStageFilter] = useState('');
-  const [priorityFilter, setPriorityFilter] = useState('');
+  const [filteredData, setFilteredData] = useState([]);
   const [sortCol, setSortCol] = useState('overall_rating');
   const [sortDir, setSortDir] = useState('desc');
 
@@ -49,23 +48,18 @@ export default function SupplierNegotiations() {
   }, [data]);
 
   const filtered = useMemo(() => {
-    let f = data;
-    if (search) f = f.filter(r => (r.supplier_name||'').toLowerCase().includes(search.toLowerCase()) || (r.hs4||'').includes(search) || (r.supplier_platform||'').toLowerCase().includes(search.toLowerCase()));
-    if (stageFilter) f = f.filter(r => r.stage === stageFilter);
-    if (priorityFilter) f = f.filter(r => r.priority === priorityFilter);
-    f = [...f].sort((a,b) => {
+    let f = [...filteredData];
+    f.sort((a,b) => {
       const av = a[sortCol], bv = b[sortCol];
       if (av == null) return 1; if (bv == null) return -1;
       return sortDir === 'asc' ? (av > bv ? 1 : -1) : (av < bv ? 1 : -1);
     });
     return f;
-  }, [data, search, stageFilter, priorityFilter, sortCol, sortDir]);
+  }, [filteredData, sortCol, sortDir]);
 
   const handleSort = col => { if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setSortCol(col); setSortDir('desc'); } };
 
   if (loading) return <div style={{ padding:40, textAlign:'center', color:'#94a3b8' }}>Loading supplier negotiations...</div>;
-
-  const stages = [...new Set(data.map(r=>r.stage).filter(Boolean))].sort();
 
   const columns = [
     {key:'hs4', label:'HS4'},
@@ -100,18 +94,13 @@ export default function SupplierNegotiations() {
       </div>
 
       {/* Filters */}
-      <div style={{ display:'flex', gap:'8px', flexWrap:'wrap', marginBottom:'12px', alignItems:'center' }}>
-        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search supplier, HS4, platform..." style={{ padding:'6px 10px', borderRadius:'6px', border:'1px solid rgba(148,163,184,0.15)', background:'#1a2035', color:'#e2e8f0', fontSize:'12px', width:'220px' }} />
-        <select value={stageFilter} onChange={e=>setStageFilter(e.target.value)} style={{ padding:'6px 10px', borderRadius:'6px', border:'1px solid rgba(148,163,184,0.15)', background:'#1a2035', color:'#e2e8f0', fontSize:'12px' }}>
-          <option value="">All Stages</option>
-          {stages.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
-        <select value={priorityFilter} onChange={e=>setPriorityFilter(e.target.value)} style={{ padding:'6px 10px', borderRadius:'6px', border:'1px solid rgba(148,163,184,0.15)', background:'#1a2035', color:'#e2e8f0', fontSize:'12px' }}>
-          <option value="">All Priorities</option>
-          {['high','medium','low'].map(p => <option key={p} value={p}>{p}</option>)}
-        </select>
-        <span style={{ color:'#94a3b8', fontSize:'12px' }}>{filtered.length} suppliers</span>
-      </div>
+      <SearchFilter
+        data={data}
+        onFilter={setFilteredData}
+        searchFields={['supplier_name','hs4','supplier_platform']}
+        filters={[{key:'stage',label:'Stage'},{key:'priority',label:'Priority'}]}
+        placeholder="Search supplier, HS4, platform..."
+      />
 
       {/* Table */}
       <div style={{ overflowX:'auto' }}>

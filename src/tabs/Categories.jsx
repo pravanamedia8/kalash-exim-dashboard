@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { supabase } from '../supabaseClient';
+import SearchFilter from '../components/SearchFilter';
 
 const COLORS = ['#4f8cff','#34d399','#fbbf24','#f87171','#a78bfa','#fb923c','#22d3ee','#f472b6','#818cf8','#94a3b8'];
 
 export default function Categories() {
   const [loading, setLoading] = useState(true);
   const [categories, setCategories] = useState([]);
+  const [filtered, setFiltered] = useState([]);
 
   useEffect(() => {
     const loadData = async () => {
@@ -117,14 +119,22 @@ export default function Categories() {
         </ResponsiveContainer>
       </div>
 
+      <SearchFilter
+        data={categories}
+        onFilter={setFiltered}
+        searchFields={['category']}
+        filters={[]}
+        placeholder="Search categories..."
+      />
+
       <div className="card">
-        <div className="card-title">📁 Category Analysis</div>
+        <div className="card-title">📁 Category Analysis ({filtered.length})</div>
         <table>
           <thead>
             <tr><th>Category</th><th>Products</th><th>Avg Score</th><th>Total Value $M</th><th>PASS</th><th>MAYBE</th><th>WATCH</th><th>DROP</th></tr>
           </thead>
           <tbody>
-            {categories.map((cat, idx) => (
+            {filtered.map((cat, idx) => (
               <tr key={idx}>
                 <td style={{fontWeight:600}}>{cat.category || '-'}</td>
                 <td>{cat.count || 0}</td>

@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../supabaseClient';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, ScatterChart, Scatter, ZAxis } from 'recharts';
+import SearchFilter from '../components/SearchFilter';
 
 const MV = { EXCELLENT:'#34d399', GOOD:'#60a5fa', MODERATE:'#fbbf24', THIN:'#f59e0b', NEGATIVE:'#f87171', UNIT_MISMATCH:'#a78bfa', NO_DATA:'#64748b' };
 const card = { background:'rgba(17,24,39,0.8)', border:'1px solid rgba(148,163,184,0.1)', borderRadius:12, padding:20 };
@@ -16,9 +17,7 @@ export default function HS8MarginDetail() {
   const [view, setView] = useState('table');
 
   // Filters
-  const [search, setSearch] = useState('');
-  const [verdictFilter, setVerdictFilter] = useState('all');
-  const [hs4Filter, setHs4Filter] = useState('all');
+  const [sfFiltered, setSfFiltered] = useState([]);
   const [unitFilter, setUnitFilter] = useState('all');
   const [dispersionFilter, setDispersionFilter] = useState('all');
   const [minMargin, setMinMargin] = useState('');
@@ -50,19 +49,13 @@ export default function HS8MarginDetail() {
   }, [data]);
 
   const filtered = useMemo(() => {
-    let f = [...data];
-    if (verdictFilter !== 'all') f = f.filter(r => r.margin_verdict === verdictFilter);
-    if (hs4Filter !== 'all') f = f.filter(r => r.hs4 === hs4Filter);
+    let f = [...sfFiltered];
     if (unitFilter !== 'all') f = f.filter(r => r.dominant_unit === unitFilter);
     if (dispersionFilter !== 'all') f = f.filter(r => r.rate_dispersion === dispersionFilter);
     if (researchFilter === 'completed') f = f.filter(r => r.selling_price_research_status === 'completed');
     if (researchFilter === 'pending') f = f.filter(r => r.selling_price_research_status !== 'completed');
     if (minMargin !== '') f = f.filter(r => r.real_margin_pct != null && r.real_margin_pct >= Number(minMargin));
     if (maxMargin !== '') f = f.filter(r => r.real_margin_pct != null && r.real_margin_pct <= Number(maxMargin));
-    if (search) {
-      const s = search.toLowerCase();
-      f = f.filter(r => (r.hs8 + ' ' + r.hs4 + ' ' + (r.commodity || '')).toLowerCase().includes(s));
-    }
     f.sort((a, b) => {
       let av = a[sort.col], bv = b[sort.col];
       if (av == null) av = sort.dir === 'desc' ? -Infinity : Infinity;
@@ -73,7 +66,7 @@ export default function HS8MarginDetail() {
       return 0;
     });
     return f;
-  }, [data, verdictFilter, hs4Filter, unitFilter, dispersionFilter, researchFilter, minMargin, maxMargin, search, sort]);
+  }, [sfFiltered, unitFilter, dispersionFilter, researchFilter, minMargin, maxMargin, sort]);
 
   const paged = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
@@ -131,7 +124,7 @@ export default function HS8MarginDetail() {
     setPage(0);
   };
   const resetFilters = () => {
-    setSearch(''); setVerdictFilter('all'); setHs4Filter('all'); setUnitFilter('all');
+    setUnitFilter('all');
     setDispersionFilter('all'); setMinMargin(''); setMaxMargin(''); setResearchFilter('all');
     setPage(0);
   };
@@ -320,7 +313,7 @@ export default function HS8MarginDetail() {
           </tr></thead>
           <tbody>{hs4Summary.map((r, i) => (
             <tr key={i} style={{ borderBottom: '1px solid rgba(148,163,184,0.05)', cursor: 'pointer' }}
-              onClick={() => { setHs4Filter(r.hs4); setView('table'); setPage(0); }}>
+              onClick={() => { setView('table'); setPage(0); }}>
               <td style={{ ...tdBase, color: '#60a5fa', fontFamily: 'monospace', fontWeight: 600 }}>{r.hs4}</td>
               <td style={{ ...tdBase, color: '#94a3b8' }}>{r.codes}</td>
               <td style={{ ...tdBase, color: r.viable > 0 ? '#34d399' : '#4b5563', fontWeight: 600 }}>{r.viable}</td>
@@ -420,22 +413,13 @@ export default function HS8MarginDetail() {
 
       {/* Table View */}
       {view === 'table' && (
+        <>
+        <SearchFilter data={data} onFilter={setSfFiltered} searchFields={['hs8','hs4','commodity']} filters={[{key:'margin_verdict',label:'Verdict'},{key:'hs4',label:'HS4'}]} placeholder="Search HS8 / HS4 / product..." />
+
         <div style={card}>
-          {/* Filters */}
+          {/* Specialized Filters */}
           <div style={{ display: 'flex', gap: 8, marginBottom: 14, alignItems: 'center', flexWrap: 'wrap' }}>
             <span style={{ color: '#e2e8f0', fontSize: 13, fontWeight: 600 }}>HS8 Codes ({filtered.length})</span>
-            <input value={search} onChange={e => { setSearch(e.target.value); setPage(0); }} placeholder="Search HS8/HS4/product..."
-              style={{ ...selStyle, flex: 1, minWidth: 160 }} />
-            <select value={verdictFilter} onChange={e => { setVerdictFilter(e.target.value); setPage(0); }} style={selStyle}>
-              <option value="all">All Verdicts</option>
-              {['EXCELLENT', 'GOOD', 'MODERATE', 'THIN', 'NEGATIVE', 'UNIT_MISMATCH', 'NO_DATA'].map(v =>
-                <option key={v} value={v}>{v} ({verdictCounts[v] || 0})</option>
-              )}
-            </select>
-            <select value={hs4Filter} onChange={e => { setHs4Filter(e.target.value); setPage(0); }} style={selStyle}>
-              <option value="all">All HS4</option>
-              {hs4List.map(([k, c]) => <option key={k} value={k}>{k} ({c})</option>)}
-            </select>
             <select value={unitFilter} onChange={e => { setUnitFilter(e.target.value); setPage(0); }} style={selStyle}>
               <option value="all">All Units</option>
               {unitList.map(([k, c]) => <option key={k} value={k}>{k} ({c})</option>)}
@@ -500,6 +484,7 @@ export default function HS8MarginDetail() {
             </div>
           )}
         </div>
+        </>
       )}
     </div>
   );

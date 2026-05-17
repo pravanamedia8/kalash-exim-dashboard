@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../supabaseClient';
 import { BarChart, Bar, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import SearchFilter from '../components/SearchFilter';
 
 const C = { pursue: '#34d399', strong: '#60a5fa', moderate: '#fbbf24', drop: '#f87171', bg2: '#111827', bg3: '#1a2035', tx1: '#e2e8f0', tx2: '#94a3b8', border: 'rgba(148,163,184,0.08)' };
 const verdictColor = v => v === 'PURSUE' ? C.pursue : v === 'STRONG' ? C.strong : v === 'MODERATE' ? C.moderate : C.drop;
@@ -17,7 +18,7 @@ export default function ProductShortlist() {
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState('ranking');
   const [sortBy, setSortBy] = useState('total_score');
-  const [filterVerdict, setFilterVerdict] = useState('ALL');
+  const [filtered, setFiltered] = useState([]);
   const [selectedCode, setSelectedCode] = useState(null);
 
   useEffect(() => {
@@ -39,15 +40,15 @@ export default function ProductShortlist() {
       const sc = scores.find(s => s.hs4 === q.hs4) || {};
       const dd = deepDives.find(d => d.hs4 === q.hs4);
       return { ...q, ...sc, deepDive: dd };
-    }).sort((a, b) => sortBy === 'gross_margin_pct' ? (b.gross_margin_pct || 0) - (a.gross_margin_pct || 0)
+    });
+  }, [scores, volzaQueue, deepDives]);
+
+  const sortedFiltered = useMemo(() => {
+    return [...filtered].sort((a, b) => sortBy === 'gross_margin_pct' ? (b.gross_margin_pct || 0) - (a.gross_margin_pct || 0)
       : sortBy === 'val_m' ? (b.val_m || 0) - (a.val_m || 0)
       : sortBy === 'fob_typical_usd' ? (a.fob_typical_usd || 999) - (b.fob_typical_usd || 999)
       : (b.total_score || 0) - (a.total_score || 0));
-  }, [scores, volzaQueue, deepDives, sortBy]);
-
-  const filtered = useMemo(() =>
-    filterVerdict === 'ALL' ? enriched : enriched.filter(e => e.verdict === filterVerdict)
-  , [enriched, filterVerdict]);
+  }, [filtered, sortBy]);
 
   const pursueCount = enriched.filter(e => e.verdict === 'PURSUE').length;
   const strongCount = enriched.filter(e => e.verdict === 'STRONG').length;
@@ -77,6 +78,17 @@ export default function ProductShortlist() {
         ))}
       </div>
 
+      <SearchFilter
+        data={enriched}
+        onFilter={setFiltered}
+        searchFields={['hs4', 'commodity']}
+        filters={[
+          { key: 'verdict', label: 'Verdict' },
+          { key: 'trading_model', label: 'Model' },
+        ]}
+        placeholder="Search HS4, commodity..."
+      />
+
       {/* View Tabs */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
         {['ranking', 'deepdives', 'radar', 'volza_queue'].map(v => (
@@ -90,7 +102,7 @@ export default function ProductShortlist() {
         ))}
       </div>
 
-      {view === 'ranking' && <RankingView items={filtered} sortBy={sortBy} setSortBy={setSortBy} filterVerdict={filterVerdict} setFilterVerdict={setFilterVerdict} onSelect={setSelectedCode} selectedCode={selectedCode} />}
+      {view === 'ranking' && <RankingView items={sortedFiltered} sortBy={sortBy} setSortBy={setSortBy} onSelect={setSelectedCode} selectedCode={selectedCode} />}
       {view === 'deepdives' && <DeepDiveView dives={deepDives} />}
       {view === 'radar' && <RadarView items={enriched.filter(e => e.score_margin != null).slice(0, 10)} />}
       {view === 'volza_queue' && <VolzaQueueView queue={volzaQueue} />}
@@ -98,10 +110,10 @@ export default function ProductShortlist() {
   );
 }
 
-function RankingView({ items, sortBy, setSortBy, filterVerdict, setFilterVerdict, onSelect, selectedCode }) {
+function RankingView({ items, sortBy, setSortBy, onSelect, selectedCode }) {
   return (
     <div>
-      {/* Controls */}
+      {/* Sort Controls */}
       <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
         <label style={{ color: '#94a3b8', fontSize: 12 }}>Sort:</label>
         {[['total_score', 'Score'], ['gross_margin_pct', 'Margin %'], ['val_m', 'Market $'], ['fob_typical_usd', 'FOB (low first)']].map(([k, l]) => (
@@ -110,15 +122,6 @@ function RankingView({ items, sortBy, setSortBy, filterVerdict, setFilterVerdict
             background: sortBy === k ? 'rgba(79,140,255,0.15)' : 'transparent', color: sortBy === k ? '#4f8cff' : '#94a3b8',
             border: `1px solid ${sortBy === k ? '#4f8cff50' : 'transparent'}`
           }}>{l}</button>
-        ))}
-        <span style={{ margin: '0 8px', color: '#334155' }}>|</span>
-        <label style={{ color: '#94a3b8', fontSize: 12 }}>Filter:</label>
-        {['ALL', 'PURSUE', 'STRONG'].map(v => (
-          <button key={v} onClick={() => setFilterVerdict(v)} style={{
-            padding: '4px 10px', borderRadius: 6, fontSize: 12, cursor: 'pointer',
-            background: filterVerdict === v ? 'rgba(52,211,153,0.15)' : 'transparent',
-            color: filterVerdict === v ? '#34d399' : '#94a3b8', border: `1px solid ${filterVerdict === v ? '#34d39950' : 'transparent'}`
-          }}>{v}</button>
         ))}
       </div>
 

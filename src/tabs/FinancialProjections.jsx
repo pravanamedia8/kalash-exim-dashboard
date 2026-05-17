@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../supabaseClient';
+import SearchFilter from '../components/SearchFilter';
 
 const COLORS = { pass:'#34d399', maybe:'#fbbf24', drop:'#f87171', blue:'#60a5fa', cyan:'#22d3ee', orange:'#fb923c', purple:'#a78bfa' };
 const RGB = { pass:'rgba(52,211,153,0.12)', maybe:'rgba(251,191,36,0.12)', drop:'rgba(248,113,113,0.12)', blue:'rgba(96,165,250,0.12)', cyan:'rgba(34,211,238,0.12)', orange:'rgba(251,146,60,0.12)', purple:'rgba(167,139,250,0.12)' };
@@ -27,10 +28,7 @@ const KPI = ({ label, value, color='#60a5fa', sub='' }) => (
 export default function FinancialProjections() {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const [scenarioFilter, setScenarioFilter] = useState('');
-  const [modelFilter, setModelFilter] = useState('');
-  const [minROI, setMinROI] = useState('');
+  const [filteredData, setFilteredData] = useState([]);
   const [sortCol, setSortCol] = useState('roi_year1_pct');
   const [sortDir, setSortDir] = useState('desc');
 
@@ -61,18 +59,14 @@ export default function FinancialProjections() {
   }, [data]);
 
   const filtered = useMemo(() => {
-    let f = data;
-    if (search) f = f.filter(r => (r.hs4||'').includes(search) || (r.product_desc||'').toLowerCase().includes(search.toLowerCase()));
-    if (scenarioFilter) f = f.filter(r => r.scenario === scenarioFilter);
-    if (modelFilter) f = f.filter(r => r.trading_model === modelFilter);
-    if (minROI) f = f.filter(r => (r.roi_year1_pct||0) >= Number(minROI));
-    f = [...f].sort((a,b) => {
+    let f = [...filteredData];
+    f.sort((a,b) => {
       const av = a[sortCol], bv = b[sortCol];
       if (av == null) return 1; if (bv == null) return -1;
       return sortDir === 'asc' ? (av > bv ? 1 : -1) : (av < bv ? 1 : -1);
     });
     return f;
-  }, [data, search, scenarioFilter, modelFilter, minROI, sortCol, sortDir]);
+  }, [filteredData, sortCol, sortDir]);
 
   const handleSort = col => { if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setSortCol(col); setSortDir('desc'); } };
 
@@ -137,19 +131,13 @@ export default function FinancialProjections() {
       </div>
 
       {/* Filters */}
-      <div style={{ display:'flex', gap:'8px', flexWrap:'wrap', marginBottom:'12px', alignItems:'center' }}>
-        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search HS4, product..." style={{ padding:'6px 10px', borderRadius:'6px', border:'1px solid rgba(148,163,184,0.15)', background:'#1a2035', color:'#e2e8f0', fontSize:'12px', width:'180px' }} />
-        <select value={scenarioFilter} onChange={e=>setScenarioFilter(e.target.value)} style={{ padding:'6px 10px', borderRadius:'6px', border:'1px solid rgba(148,163,184,0.15)', background:'#1a2035', color:'#e2e8f0', fontSize:'12px' }}>
-          <option value="">All Scenarios</option>
-          {['conservative','base','optimistic'].map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
-        <select value={modelFilter} onChange={e=>setModelFilter(e.target.value)} style={{ padding:'6px 10px', borderRadius:'6px', border:'1px solid rgba(148,163,184,0.15)', background:'#1a2035', color:'#e2e8f0', fontSize:'12px' }}>
-          <option value="">All Models</option>
-          {['REGULAR','SPOT','BROKER','MIXED'].map(m => <option key={m} value={m}>{m}</option>)}
-        </select>
-        <input value={minROI} onChange={e=>setMinROI(e.target.value)} placeholder="Min ROI %" type="number" style={{ padding:'6px 10px', borderRadius:'6px', border:'1px solid rgba(148,163,184,0.15)', background:'#1a2035', color:'#e2e8f0', fontSize:'12px', width:'100px' }} />
-        <span style={{ color:'#94a3b8', fontSize:'12px' }}>{filtered.length} rows</span>
-      </div>
+      <SearchFilter
+        data={data}
+        onFilter={setFilteredData}
+        searchFields={['hs4','product_desc']}
+        filters={[{key:'scenario',label:'Scenario'},{key:'trading_model',label:'Model'}]}
+        placeholder="Search HS4, product..."
+      />
 
       {/* Table */}
       <div style={{ overflowX:'auto' }}>

@@ -4,14 +4,13 @@ import {
   Cell, Legend
 } from 'recharts';
 import { supabase } from '../supabaseClient';
+import SearchFilter from '../components/SearchFilter';
 
 const HS2Chapters = () => {
   const [chapters, setChapters] = useState([]);
+  const [filtered, setFiltered] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [verdictFilter, setVerdictFilter] = useState('All');
-  const [goodsTypeFilter, setGoodsTypeFilter] = useState('All');
   const [sortConfig, setSortConfig] = useState({ key: 'chapter_score', direction: 'desc' });
 
   // Fetch data on mount
@@ -34,18 +33,8 @@ const HS2Chapters = () => {
     loadData();
   }, []);
 
-  // Filter chapters
-  const filteredChapters = chapters.filter((ch) => {
-    const matchesSearch =
-      ch.hs2.toString().includes(searchTerm) ||
-      ch.description.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesVerdict = verdictFilter === 'All' || ch.verdict === verdictFilter;
-    const matchesGoodsType = goodsTypeFilter === 'All' || ch.goods_type === goodsTypeFilter;
-    return matchesSearch && matchesVerdict && matchesGoodsType;
-  });
-
   // Sort chapters
-  const sortedChapters = [...filteredChapters].sort((a, b) => {
+  const sortedChapters = [...filtered].sort((a, b) => {
     const aVal = a[sortConfig.key];
     const bVal = b[sortConfig.key];
     if (aVal === undefined || aVal === null) return 1;
@@ -54,12 +43,6 @@ const HS2Chapters = () => {
     const comparison = aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
     return sortConfig.direction === 'desc' ? -comparison : comparison;
   });
-
-  // Get unique goods types
-  const goodsTypes = ['All', ...new Set(chapters.map((ch) => ch.goods_type).filter(Boolean))];
-
-  // Get unique verdicts for dropdown
-  const verdicts = ['All', 'PASS', 'MAYBE', 'WATCH', 'DROP'];
 
   // Handle column sort
   const handleSort = (key) => {
@@ -153,37 +136,16 @@ const HS2Chapters = () => {
       </div>
 
       {/* Filters Row */}
-      <div className="filters">
-        <input
-          type="text"
-          className="filter-input"
-          placeholder="Search by HS2 code or description..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-        />
-        <select
-          className="filter-select"
-          value={verdictFilter}
-          onChange={(e) => setVerdictFilter(e.target.value)}
-        >
-          {verdicts.map((v) => (
-            <option key={v} value={v}>
-              {v}
-            </option>
-          ))}
-        </select>
-        <select
-          className="filter-select"
-          value={goodsTypeFilter}
-          onChange={(e) => setGoodsTypeFilter(e.target.value)}
-        >
-          {goodsTypes.map((gt) => (
-            <option key={gt} value={gt}>
-              {gt}
-            </option>
-          ))}
-        </select>
-      </div>
+      <SearchFilter
+        data={chapters}
+        onFilter={setFiltered}
+        searchFields={['hs2', 'description']}
+        filters={[
+          { key: 'verdict', label: 'Verdict' },
+          { key: 'goods_type', label: 'Type' },
+        ]}
+        placeholder="Search by HS2 code or description..."
+      />
 
       {/* Top 20 Score Chart */}
       <div className="chart-container">

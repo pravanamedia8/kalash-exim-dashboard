@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { supabase } from '../supabaseClient';
+import SearchFilter from '../components/SearchFilter';
 
 const STAGE_COLORS = ['#4f8cff','#34d399','#fbbf24','#f87171','#a78bfa','#fb923c','#22d3ee','#f472b6'];
 
@@ -10,6 +11,7 @@ export default function PipelineJourney() {
   const [decisions, setDecisions] = useState(null);
   const [insights, setInsights] = useState([]);
   const [margins, setMargins] = useState([]);
+  const [filteredMargins, setFilteredMargins] = useState([]);
 
   useEffect(() => {
     const loadData = async () => {
@@ -139,10 +141,16 @@ export default function PipelineJourney() {
       {margins.length > 0 && (
         <div className="card">
           <div className="card-title">💰 Margin Analysis Summary</div>
+          <SearchFilter
+            data={margins}
+            onFilter={setFilteredMargins}
+            searchFields={['hs4','key_products','strategy']}
+            placeholder="Search margins..."
+          />
           <table>
             <thead><tr><th>HS4</th><th>Key Products</th><th>China Source $</th><th>Landed INR</th><th>Sell INR</th><th>Margin %</th><th>Strategy</th></tr></thead>
             <tbody>
-              {margins.map((m, idx) => (
+              {filteredMargins.map((m, idx) => (
                 <tr key={idx}>
                   <td>{m.hs4}</td>
                   <td>{m.key_products}</td>

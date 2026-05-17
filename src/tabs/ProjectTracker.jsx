@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import SearchFilter from '../components/SearchFilter';
 
 const card = {background:'rgba(17,24,39,0.8)', border:'1px solid rgba(148,163,184,0.1)', borderRadius:12, padding:20};
 
@@ -10,6 +11,7 @@ export default function ProjectTracker() {
   const [strategy, setStrategy] = useState([]);
   const [loading, setLoading] = useState(true);
   const [taskFilter, setTaskFilter] = useState('all');
+  const [filteredStrategy, setFilteredStrategy] = useState([]);
 
   useEffect(() => {
     fetchAll();
@@ -118,7 +120,13 @@ export default function ProjectTracker() {
 
       <div style={{...card,marginTop:16}}>
         <h3 style={{color:'#e2e8f0',fontSize:14,marginBottom:16}}>Strategy Timeline</h3>
-        {strategy.map((s,i)=>(
+        <SearchFilter
+          data={strategy}
+          onFilter={setFilteredStrategy}
+          searchFields={['phase','action','details','impact']}
+          placeholder="Search strategy timeline..."
+        />
+        {filteredStrategy.map((s,i)=>(
           <div key={i} style={{display:'flex',gap:16,padding:'12px 0',borderBottom:'1px solid rgba(148,163,184,0.05)'}}>
             <div style={{minWidth:120,color:'#64748b',fontSize:11}}>{s.timestamp?new Date(s.timestamp).toLocaleString():'-'}</div>
             <span style={{background:'rgba(96,165,250,0.15)',color:'#60a5fa',padding:'2px 8px',borderRadius:4,fontSize:11,height:'fit-content'}}>{s.phase}</span>

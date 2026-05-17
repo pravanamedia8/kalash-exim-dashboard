@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, Legend } from 'recharts';
+import SearchFilter from '../components/SearchFilter';
 
 const card = {background:'rgba(17,24,39,0.8)', border:'1px solid rgba(148,163,184,0.1)', borderRadius:12, padding:20};
 const RISK_COLORS = { LOW:'#34d399', MEDIUM:'#fbbf24', HIGH:'#f59e0b', CRITICAL:'#f87171' };
@@ -8,8 +9,7 @@ const RISK_COLORS = { LOW:'#34d399', MEDIUM:'#fbbf24', HIGH:'#f59e0b', CRITICAL:
 export default function RegulatoryDashboard() {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [riskFilter, setRiskFilter] = useState('all');
-  const [search, setSearch] = useState('');
+  const [filtered, setFiltered] = useState([]);
   const [sort, setSort] = useState({col:'total_duty_pct',dir:'desc'});
 
   useEffect(() => {
@@ -46,10 +46,7 @@ export default function RegulatoryDashboard() {
     {label:'FTA Benefit',value:ftaCodes,sub:'codes eligible',color:'#34d399'},
   ];
 
-  let filtered = data;
-  if(riskFilter!=='all') filtered = filtered.filter(r=>r.regulatory_risk_score===riskFilter);
-  if(search) filtered = filtered.filter(r=>(r.hs4||'').includes(search));
-  filtered = [...filtered].sort((a,b)=>{ let av=a[sort.col]??-Infinity,bv=b[sort.col]??-Infinity; return sort.dir==='asc'?(av<bv?-1:1):(av>bv?-1:1); });
+  const sorted = [...filtered].sort((a,b)=>{ let av=a[sort.col]??-Infinity,bv=b[sort.col]??-Infinity; return sort.dir==='asc'?(av<bv?-1:1):(av>bv?-1:1); });
 
   const toggleSort = col => setSort(s=>({col,dir:s.col===col&&s.dir==='desc'?'asc':'desc'}));
   const thStyle = {textAlign:'left',padding:'8px 10px',color:'#94a3b8',fontSize:11,borderBottom:'1px solid rgba(148,163,184,0.1)',cursor:'pointer',position:'sticky',top:0,background:'rgba(17,24,39,0.95)',textTransform:'uppercase'};
@@ -89,14 +86,7 @@ export default function RegulatoryDashboard() {
       </div>
 
       <div style={card}>
-        <div style={{display:'flex',gap:12,marginBottom:16,alignItems:'center',flexWrap:'wrap'}}>
-          <h3 style={{color:'#e2e8f0',fontSize:14,margin:0}}>Regulatory Checks ({filtered.length})</h3>
-          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search HS4..." style={{background:'#1e293b',color:'#e2e8f0',border:'1px solid rgba(148,163,184,0.2)',borderRadius:6,padding:'6px 12px',fontSize:12,width:150}} />
-          <select value={riskFilter} onChange={e=>setRiskFilter(e.target.value)} style={{background:'#1e293b',color:'#e2e8f0',border:'1px solid rgba(148,163,184,0.2)',borderRadius:6,padding:'6px 8px',fontSize:12}}>
-            <option value="all">All Risk Levels</option>
-            {Object.keys(risks).map(r=><option key={r} value={r}>{r} ({risks[r]})</option>)}
-          </select>
-        </div>
+        <SearchFilter data={data} onFilter={setFiltered} searchFields={['hs4']} filters={[{key:'regulatory_risk_score',label:'Risk Levels'}]} placeholder="Search HS4..." />
         <div style={{maxHeight:500,overflowY:'auto'}}>
           <table style={{width:'100%',borderCollapse:'collapse'}}>
             <thead><tr>
@@ -104,7 +94,7 @@ export default function RegulatoryDashboard() {
                 <th key={col} onClick={()=>toggleSort(col)} style={thStyle}>{label}{sort.col===col?(sort.dir==='asc'?' ▲':' ▼'):''}</th>
               ))}
             </tr></thead>
-            <tbody>{filtered.slice(0,200).map((r,i)=>(
+            <tbody>{sorted.slice(0,200).map((r,i)=>(
               <tr key={i} style={{borderBottom:'1px solid rgba(148,163,184,0.05)'}}>
                 <td style={{padding:'6px 10px',color:'#60a5fa',fontSize:12,fontFamily:'monospace'}}>{r.hs4}</td>
                 <td style={{padding:'6px 10px',color:r.total_duty_pct>30?'#f87171':r.total_duty_pct>20?'#fbbf24':'#34d399',fontSize:12,fontWeight:600}}>{r.total_duty_pct?`${Number(r.total_duty_pct).toFixed(1)}%`:'-'}</td>

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, ScatterChart, Scatter, ZAxis } from 'recharts';
+import SearchFilter from '../components/SearchFilter';
 
 const card = {background:'rgba(17,24,39,0.8)', border:'1px solid rgba(148,163,184,0.1)', borderRadius:12, padding:20};
 
@@ -8,9 +9,8 @@ export default function SupplyChainView() {
   const [alibaba, setAlibaba] = useState([]);
   const [indiamart, setIndiamart] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
+  const [filteredJoined, setFilteredJoined] = useState([]);
   const [sort, setSort] = useState({col:'gross_margin_pct',dir:'desc'});
-  const [marginFilter, setMarginFilter] = useState('all');
 
   useEffect(() => {
     Promise.all([
@@ -92,14 +92,8 @@ export default function SupplyChainView() {
   const scatterData = joined.filter(j=>j.suppliers>0&&j.sellers>0&&j.margin_pct>0)
     .map(j=>({x:j.suppliers,y:j.sellers,z:Math.max(j.margin_pct,5),name:j.hs4}));
 
-  // Filters
-  let filtered = joined;
-  if(marginFilter==='high') filtered = filtered.filter(j=>j.margin_pct>=25);
-  else if(marginFilter==='mid') filtered = filtered.filter(j=>j.margin_pct>=10&&j.margin_pct<25);
-  else if(marginFilter==='low') filtered = filtered.filter(j=>j.margin_pct<10&&j.margin_pct>0);
-  else if(marginFilter==='none') filtered = filtered.filter(j=>j.margin_pct===0);
-  if(search) filtered = filtered.filter(j=>j.hs4.includes(search));
-  filtered = [...filtered].sort((a,b)=>{ let av=a[sort.col]??-Infinity,bv=b[sort.col]??-Infinity; return sort.dir==='asc'?(av<bv?-1:1):(av>bv?-1:1); });
+  // Filters + Sort
+  let filtered = [...filteredJoined].sort((a,b)=>{ let av=a[sort.col]??-Infinity,bv=b[sort.col]??-Infinity; return sort.dir==='asc'?(av<bv?-1:1):(av>bv?-1:1); });
 
   const toggleSort = col => setSort(s=>({col,dir:s.col===col&&s.dir==='desc'?'asc':'desc'}));
   const thStyle = {textAlign:'left',padding:'8px 10px',color:'#94a3b8',fontSize:11,borderBottom:'1px solid rgba(148,163,184,0.1)',cursor:'pointer',position:'sticky',top:0,background:'rgba(17,24,39,0.95)',textTransform:'uppercase'};
@@ -140,17 +134,13 @@ export default function SupplyChainView() {
       </div>
 
       <div style={card}>
-        <div style={{display:'flex',gap:12,marginBottom:16,alignItems:'center',flexWrap:'wrap'}}>
-          <h3 style={{color:'#e2e8f0',fontSize:14,margin:0}}>Supply Chain Matrix ({filtered.length})</h3>
-          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search HS4..." style={{background:'#1e293b',color:'#e2e8f0',border:'1px solid rgba(148,163,184,0.2)',borderRadius:6,padding:'6px 12px',fontSize:12,width:140}} />
-          <select value={marginFilter} onChange={e=>setMarginFilter(e.target.value)} style={{background:'#1e293b',color:'#e2e8f0',border:'1px solid rgba(148,163,184,0.2)',borderRadius:6,padding:'6px 8px',fontSize:12}}>
-            <option value="all">All Margins</option>
-            <option value="high">High (25%+)</option>
-            <option value="mid">Medium (10-25%)</option>
-            <option value="low">Low (&lt;10%)</option>
-            <option value="none">No Margin Data</option>
-          </select>
-        </div>
+        <h3 style={{color:'#e2e8f0',fontSize:14,marginBottom:12}}>Supply Chain Matrix ({filtered.length})</h3>
+        <SearchFilter
+          data={joined}
+          onFilter={setFilteredJoined}
+          searchFields={['hs4']}
+          placeholder="Search HS4..."
+        />
         <div style={{maxHeight:500,overflowY:'auto'}}>
           <table style={{width:'100%',borderCollapse:'collapse'}}>
             <thead><tr>

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
+import SearchFilter from '../components/SearchFilter';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
 const COLORS = { EXCELLENT: '#34d399', GOOD: '#60a5fa', MODERATE: '#fbbf24', THIN: '#f59e0b', NEGATIVE: '#f87171', PURSUE: '#34d399', STRONG: '#60a5fa', REGULAR: '#34d399', SPOT: '#fbbf24', MIXED: '#a78bfa', BROKER: '#60a5fa' };
@@ -7,6 +8,7 @@ const COLORS = { EXCELLENT: '#34d399', GOOD: '#60a5fa', MODERATE: '#fbbf24', THI
 export default function Overview() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [filteredStrategy, setFilteredStrategy] = useState([]);
 
   useEffect(() => { fetchAll(); }, []);
 
@@ -90,9 +92,15 @@ export default function Overview() {
       </div>
       <div style={card}>
         <h3 style={{color:'#e2e8f0', fontSize:14, marginBottom:12}}>Recent Strategy Updates</h3>
+        <SearchFilter
+          data={data.strategy}
+          onFilter={setFilteredStrategy}
+          searchFields={['phase','action','details']}
+          placeholder="Search strategy updates..."
+        />
         <table style={{width:'100%', borderCollapse:'collapse'}}>
           <thead><tr>{['Time','Phase','Action','Details'].map(h=><th key={h} style={{textAlign:'left',padding:'8px 12px',color:'#94a3b8',fontSize:11,borderBottom:'1px solid rgba(148,163,184,0.1)',textTransform:'uppercase'}}>{h}</th>)}</tr></thead>
-          <tbody>{(data.strategy).map((s,i)=>(
+          <tbody>{(filteredStrategy).map((s,i)=>(
             <tr key={i} style={{borderBottom:'1px solid rgba(148,163,184,0.05)'}}>
               <td style={{padding:'8px 12px',color:'#64748b',fontSize:12}}>{s.timestamp?new Date(s.timestamp).toLocaleString():'-'}</td>
               <td style={{padding:'8px 12px'}}><span style={{background:'rgba(96,165,250,0.15)',color:'#60a5fa',padding:'2px 8px',borderRadius:4,fontSize:11}}>{s.phase}</span></td>

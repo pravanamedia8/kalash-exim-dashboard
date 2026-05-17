@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../supabaseClient';
+import SearchFilter from '../components/SearchFilter';
 
 const COLORS = { pass:'#34d399', maybe:'#fbbf24', drop:'#f87171', blue:'#60a5fa', cyan:'#22d3ee', orange:'#fb923c', purple:'#a78bfa' };
 const RGB = { pass:'rgba(52,211,153,0.12)', maybe:'rgba(251,191,36,0.12)', drop:'rgba(248,113,113,0.12)', blue:'rgba(96,165,250,0.12)', cyan:'rgba(34,211,238,0.12)', orange:'rgba(251,146,60,0.12)', purple:'rgba(167,139,250,0.12)' };
@@ -26,10 +27,7 @@ const KPI = ({ label, value, color='#60a5fa' }) => (
 export default function SupplyChainPlan() {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const [modelFilter, setModelFilter] = useState('');
-  const [verdictFilter, setVerdictFilter] = useState('');
-  const [riskFilter, setRiskFilter] = useState('');
+  const [filteredData, setFilteredData] = useState([]);
   const [sortCol, setSortCol] = useState('final_score');
   const [sortDir, setSortDir] = useState('desc');
 
@@ -45,18 +43,14 @@ export default function SupplyChainPlan() {
   const avgROI = useMemo(() => data.reduce((s,r)=>s+(r.roi_year1_pct||0),0)/Math.max(data.length,1), [data]);
 
   const filtered = useMemo(() => {
-    let f = data;
-    if (search) f = f.filter(r => (r.hs4||'').includes(search) || (r.commodity||'').toLowerCase().includes(search.toLowerCase()));
-    if (modelFilter) f = f.filter(r => r.trading_model === modelFilter);
-    if (verdictFilter) f = f.filter(r => (r.final_verdict||'').includes(verdictFilter));
-    if (riskFilter) f = f.filter(r => r.risk_level === riskFilter);
-    f = [...f].sort((a,b) => {
+    let f = [...filteredData];
+    f.sort((a,b) => {
       const av = a[sortCol], bv = b[sortCol];
       if (av == null) return 1; if (bv == null) return -1;
       return sortDir === 'asc' ? (av > bv ? 1 : -1) : (av < bv ? 1 : -1);
     });
     return f;
-  }, [data, search, modelFilter, verdictFilter, riskFilter, sortCol, sortDir]);
+  }, [filteredData, sortCol, sortDir]);
 
   const handleSort = col => { if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setSortCol(col); setSortDir('desc'); } };
 
@@ -95,22 +89,13 @@ export default function SupplyChainPlan() {
       </div>
 
       {/* Filters */}
-      <div style={{ display:'flex', gap:'8px', flexWrap:'wrap', marginBottom:'12px', alignItems:'center' }}>
-        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search HS4, commodity..." style={{ padding:'6px 10px', borderRadius:'6px', border:'1px solid rgba(148,163,184,0.15)', background:'#1a2035', color:'#e2e8f0', fontSize:'12px', width:'200px' }} />
-        <select value={modelFilter} onChange={e=>setModelFilter(e.target.value)} style={{ padding:'6px 10px', borderRadius:'6px', border:'1px solid rgba(148,163,184,0.15)', background:'#1a2035', color:'#e2e8f0', fontSize:'12px' }}>
-          <option value="">All Models</option>
-          {['REGULAR','SPOT','BROKER','MIXED'].map(m => <option key={m} value={m}>{m}</option>)}
-        </select>
-        <select value={verdictFilter} onChange={e=>setVerdictFilter(e.target.value)} style={{ padding:'6px 10px', borderRadius:'6px', border:'1px solid rgba(148,163,184,0.15)', background:'#1a2035', color:'#e2e8f0', fontSize:'12px' }}>
-          <option value="">All Verdicts</option>
-          {['PURSUE','STRONG','MODERATE','DROP'].map(v => <option key={v} value={v}>{v}</option>)}
-        </select>
-        <select value={riskFilter} onChange={e=>setRiskFilter(e.target.value)} style={{ padding:'6px 10px', borderRadius:'6px', border:'1px solid rgba(148,163,184,0.15)', background:'#1a2035', color:'#e2e8f0', fontSize:'12px' }}>
-          <option value="">All Risk</option>
-          {['LOW','MEDIUM','HIGH','CRITICAL'].map(r => <option key={r} value={r}>{r}</option>)}
-        </select>
-        <span style={{ color:'#94a3b8', fontSize:'12px' }}>{filtered.length} products</span>
-      </div>
+      <SearchFilter
+        data={data}
+        onFilter={setFilteredData}
+        searchFields={['hs4','commodity']}
+        filters={[{key:'trading_model',label:'Model'},{key:'final_verdict',label:'Verdict'},{key:'risk_level',label:'Risk'}]}
+        placeholder="Search HS4, commodity..."
+      />
 
       {/* Table */}
       <div style={{ overflowX:'auto' }}>

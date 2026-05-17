@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../supabaseClient';
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import SearchFilter from '../components/SearchFilter';
 
 const C = { pass: '#34d399', strong: '#60a5fa', moderate: '#fbbf24', drop: '#f87171', bg2: '#111827', bg3: '#1a2035', tx1: '#e2e8f0', tx2: '#94a3b8', border: 'rgba(148,163,184,0.08)', cyan: '#22d3ee', orange: '#fb923c', purple: '#a78bfa' };
 const VERDICT_C = { PURSUE: C.pass, STRONG: C.strong, MODERATE: C.moderate, DROP: C.drop, MIXED: C.cyan };
@@ -30,9 +31,7 @@ export default function HS8DeepDive() {
   const [buyers, setBuyers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState('overview');
-  const [filterHS4, setFilterHS4] = useState('ALL');
-  const [filterVerdict, setFilterVerdict] = useState('ALL');
-  const [searchTerm, setSearchTerm] = useState('');
+  const [sfFiltered, setSfFiltered] = useState([]);
   const [sortCol, setSortCol] = useState('total_score');
   const [sortDir, setSortDir] = useState('desc');
   const [selectedHS8, setSelectedHS8] = useState(null);
@@ -52,23 +51,12 @@ export default function HS8DeepDive() {
     })();
   }, []);
 
-  // Derived data
-  const hs4List = useMemo(() => [...new Set(products.map(p => p.hs4))].sort(), [products]);
-  const verdicts = useMemo(() => [...new Set(products.map(p => p.verdict))].filter(Boolean).sort(), [products]);
-
   const filtered = useMemo(() => {
-    let f = products;
-    if (filterHS4 !== 'ALL') f = f.filter(p => p.hs4 === filterHS4);
-    if (filterVerdict !== 'ALL') f = f.filter(p => p.verdict === filterVerdict);
-    if (searchTerm) {
-      const s = searchTerm.toLowerCase();
-      f = f.filter(p => (p.product_desc || '').toLowerCase().includes(s) || (p.hs8_code || '').includes(s));
-    }
-    return f.sort((a, b) => {
+    return [...sfFiltered].sort((a, b) => {
       const av = a[sortCol] ?? -Infinity, bv = b[sortCol] ?? -Infinity;
       return sortDir === 'desc' ? (bv > av ? 1 : -1) : (av > bv ? 1 : -1);
     });
-  }, [products, filterHS4, filterVerdict, searchTerm, sortCol, sortDir]);
+  }, [sfFiltered, sortCol, sortDir]);
 
   // Stats
   const stats = useMemo(() => {
@@ -257,19 +245,7 @@ export default function HS8DeepDive() {
       {/* === PRODUCTS VIEW === */}
       {view === 'products' && !selectedHS8 && (
         <div>
-          {/* Filters */}
-          <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
-            <select value={filterHS4} onChange={e => setFilterHS4(e.target.value)} style={{ background: C.bg3, color: C.tx1, border: `1px solid ${C.border}`, borderRadius: 8, padding: '6px 10px', fontSize: 12 }}>
-              <option value="ALL">All HS4</option>
-              {hs4List.map(h => <option key={h} value={h}>{h}</option>)}
-            </select>
-            <select value={filterVerdict} onChange={e => setFilterVerdict(e.target.value)} style={{ background: C.bg3, color: C.tx1, border: `1px solid ${C.border}`, borderRadius: 8, padding: '6px 10px', fontSize: 12 }}>
-              <option value="ALL">All Verdicts</option>
-              {verdicts.map(v => <option key={v} value={v}>{v}</option>)}
-            </select>
-            <input placeholder="Search HS8 or product..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} style={{ background: C.bg3, color: C.tx1, border: `1px solid ${C.border}`, borderRadius: 8, padding: '6px 10px', fontSize: 12, minWidth: 200 }} />
-            <span style={{ fontSize: 11, color: C.tx2 }}>{filtered.length} products</span>
-          </div>
+          <SearchFilter data={products} onFilter={setSfFiltered} searchFields={['hs8_code','product_desc','hs4']} filters={[{key:'verdict',label:'Verdict'},{key:'hs4',label:'HS4'}]} placeholder="Search HS8, product, HS4..." counts />
 
           {/* Products Table */}
           <div style={{ overflowX: 'auto', background: C.bg2, borderRadius: 12, border: `1px solid ${C.border}` }}>

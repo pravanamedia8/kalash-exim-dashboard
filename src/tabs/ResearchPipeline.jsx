@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+import SearchFilter from '../components/SearchFilter';
 
 const card = {background:'rgba(17,24,39,0.8)', border:'1px solid rgba(148,163,184,0.1)', borderRadius:12, padding:20};
 const PHASE_COLORS = { phase1_complete:'#94a3b8', phase2b_done:'#60a5fa', phase3_pending:'#fbbf24', qa_pending:'#a78bfa', complete:'#34d399', phase4_complete:'#06b6d4' };
@@ -10,10 +11,8 @@ const VERDICT_COLORS = { PURSUE:'#34d399', STRONG:'#60a5fa', MODERATE:'#fbbf24',
 export default function ResearchPipeline() {
   const [codes, setCodes] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [phaseFilter, setPhaseFilter] = useState('all');
-  const [modelFilter, setModelFilter] = useState('all');
+  const [filtered, setFiltered] = useState([]);
   const [sort, setSort] = useState({col:'drill_score',dir:'desc'});
-  const [search, setSearch] = useState('');
 
   useEffect(() => {
     supabase.from('research_codes').select('*').then(({data})=>{ setCodes(data||[]); setLoading(false); });
@@ -46,14 +45,7 @@ export default function ResearchPipeline() {
     {label:'Complete',value:complete,color:'#34d399'},
   ];
 
-  const allPhases = [...new Set(codes.map(c=>c.current_phase).filter(Boolean))];
-  const allModels = [...new Set(codes.map(c=>c.trading_model).filter(Boolean))];
-
-  let filtered = codes;
-  if(phaseFilter!=='all') filtered = filtered.filter(c=>c.current_phase===phaseFilter);
-  if(modelFilter!=='all') filtered = filtered.filter(c=>c.trading_model===modelFilter);
-  if(search) filtered = filtered.filter(c=>(c.hs4+' '+c.commodity).toLowerCase().includes(search.toLowerCase()));
-  filtered.sort((a,b)=>{
+  const sorted = [...filtered].sort((a,b)=>{
     let av=a[sort.col], bv=b[sort.col];
     if(typeof av==='string') av=(av||'').toLowerCase();
     if(typeof bv==='string') bv=(bv||'').toLowerCase();
@@ -105,18 +97,7 @@ export default function ResearchPipeline() {
       </div>
 
       <div style={card}>
-        <div style={{display:'flex',gap:12,marginBottom:16,alignItems:'center',flexWrap:'wrap'}}>
-          <h3 style={{color:'#e2e8f0',fontSize:14,margin:0}}>Research Codes ({filtered.length})</h3>
-          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search HS4 / commodity..." style={{background:'#1e293b',color:'#e2e8f0',border:'1px solid rgba(148,163,184,0.2)',borderRadius:6,padding:'6px 12px',fontSize:12,flex:1,minWidth:180}} />
-          <select value={phaseFilter} onChange={e=>setPhaseFilter(e.target.value)} style={{background:'#1e293b',color:'#e2e8f0',border:'1px solid rgba(148,163,184,0.2)',borderRadius:6,padding:'6px 8px',fontSize:12}}>
-            <option value="all">All Phases</option>
-            {allPhases.map(p=><option key={p} value={p}>{p.replace(/_/g,' ')}</option>)}
-          </select>
-          <select value={modelFilter} onChange={e=>setModelFilter(e.target.value)} style={{background:'#1e293b',color:'#e2e8f0',border:'1px solid rgba(148,163,184,0.2)',borderRadius:6,padding:'6px 8px',fontSize:12}}>
-            <option value="all">All Models</option>
-            {allModels.map(m=><option key={m} value={m}>{m}</option>)}
-          </select>
-        </div>
+        <SearchFilter data={codes} onFilter={setFiltered} searchFields={['hs4','commodity']} filters={[{key:'current_phase',label:'Phases'},{key:'trading_model',label:'Models'},{key:'qa_status',label:'QA Status'}]} placeholder="Search HS4 / commodity..." />
         <div style={{maxHeight:500,overflowY:'auto'}}>
           <table style={{width:'100%',borderCollapse:'collapse'}}>
             <thead><tr>
@@ -124,7 +105,7 @@ export default function ResearchPipeline() {
                 <th key={col} onClick={()=>toggleSort(col)} style={thStyle}>{label}{sort.col===col?(sort.dir==='asc'?' ▲':' ▼'):''}</th>
               ))}
             </tr></thead>
-            <tbody>{filtered.slice(0,200).map((c,i)=>(
+            <tbody>{sorted.slice(0,200).map((c,i)=>(
               <tr key={i} style={{borderBottom:'1px solid rgba(148,163,184,0.05)'}}>
                 <td style={{padding:'6px 10px',color:'#60a5fa',fontSize:12,fontFamily:'monospace'}}>{c.hs4}</td>
                 <td style={{padding:'6px 10px',color:'#e2e8f0',fontSize:12,maxWidth:220,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{c.commodity}</td>

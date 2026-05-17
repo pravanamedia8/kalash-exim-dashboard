@@ -14,22 +14,15 @@ import {
   ZAxis,
 } from 'recharts';
 import { supabase } from '../supabaseClient';
+import SearchFilter from '../components/SearchFilter';
 
 const HS4Products = () => {
   const [products, setProducts] = useState([]);
-  const [filteredProducts, setFilteredProducts] = useState([]);
+  const [filtered, setFiltered] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [sortConfig, setSortConfig] = useState({ key: 'score', direction: 'desc' });
-
-  // Filters
-  const [searchTerm, setSearchTerm] = useState('');
-  const [verdictFilter, setVerdictFilter] = useState('all');
-  const [categoryFilter, setCategoryFilter] = useState('all');
-  const [hs2Filter, setHs2Filter] = useState('all');
-  const [entryTierFilter, setEntryTierFilter] = useState('all');
-  const [minScoreFilter, setMinScoreFilter] = useState(0);
 
   const itemsPerPage = 50;
 
@@ -54,48 +47,13 @@ const HS4Products = () => {
     loadData();
   }, []);
 
-  // Apply filters and sort
-  useEffect(() => {
-    let filtered = products.filter((product) => {
-      const matchesSearch =
-        product.hs4?.toString().includes(searchTerm) ||
-        product.commodity?.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesVerdict = verdictFilter === 'all' || product.verdict === verdictFilter;
-      const matchesCategory = categoryFilter === 'all' || product.category === categoryFilter;
-      const matchesHs2 = hs2Filter === 'all' || product.hs2 === hs2Filter;
-      const matchesEntryTier = entryTierFilter === 'all' || product.entry_tier === entryTierFilter;
-      const matchesScore = (product.score || 0) >= minScoreFilter;
-
-      return (
-        matchesSearch &&
-        matchesVerdict &&
-        matchesCategory &&
-        matchesHs2 &&
-        matchesEntryTier &&
-        matchesScore
-      );
-    });
-
-    // Sort
-    filtered.sort((a, b) => {
-      const aVal = a[sortConfig.key] || 0;
-      const bVal = b[sortConfig.key] || 0;
-      const comparison = aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
-      return sortConfig.direction === 'asc' ? comparison : -comparison;
-    });
-
-    setFilteredProducts(filtered);
-    setCurrentPage(1);
-  }, [
-    products,
-    searchTerm,
-    verdictFilter,
-    categoryFilter,
-    hs2Filter,
-    entryTierFilter,
-    minScoreFilter,
-    sortConfig,
-  ]);
+  // Sort filtered data
+  const sortedFiltered = [...filtered].sort((a, b) => {
+    const aVal = a[sortConfig.key] || 0;
+    const bVal = b[sortConfig.key] || 0;
+    const comparison = aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
+    return sortConfig.direction === 'asc' ? comparison : -comparison;
+  });
 
   // Calculate KPIs
   const totalCount = products.length;
@@ -108,12 +66,6 @@ const HS4Products = () => {
       ? (products.reduce((sum, p) => sum + (p.score || 0), 0) / totalCount).toFixed(2)
       : 0;
 
-  // Get unique values for dropdowns
-  const categories = [...new Set(products.map((p) => p.category))].filter(Boolean).sort();
-  const hs2Values = [...new Set(products.map((p) => p.hs2))].filter(Boolean).sort();
-  const entryTiers = [...new Set(products.map((p) => p.entry_tier))].filter(Boolean).sort();
-  const verdicts = ['PASS', 'MAYBE', 'WATCH', 'DROP'];
-
   // Get verdict color
   const getVerdictColor = (verdict) => {
     const colors = { PASS: '#10b981', MAYBE: '#f59e0b', WATCH: '#a855f7', DROP: '#ef4444' };
@@ -121,19 +73,19 @@ const HS4Products = () => {
   };
 
   // Pagination
-  const totalPages = Math.ceil(filteredProducts.length / itemsPerPage);
+  const totalPages = Math.ceil(sortedFiltered.length / itemsPerPage);
   const startIdx = (currentPage - 1) * itemsPerPage;
   const endIdx = startIdx + itemsPerPage;
-  const paginatedProducts = filteredProducts.slice(startIdx, endIdx);
+  const paginatedProducts = sortedFiltered.slice(startIdx, endIdx);
 
   // Data for charts
-  const top25Data = filteredProducts.slice(0, 25).map((p) => ({
+  const top25Data = sortedFiltered.slice(0, 25).map((p) => ({
     hs4: p.hs4,
     score: p.score || 0,
     verdict: p.verdict,
   }));
 
-  const scatterData = filteredProducts.map((p) => ({
+  const scatterData = sortedFiltered.map((p) => ({
     score: p.score || 0,
     value_m: p.value_m || 0,
     verdict: p.verdict,
@@ -203,74 +155,17 @@ const HS4Products = () => {
       </div>
 
       {/* Filters */}
-      <div className="filters-row">
-        <input
-          type="text"
-          placeholder="Search HS4 code or commodity..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="filter-input"
-        />
-        <select
-          value={verdictFilter}
-          onChange={(e) => setVerdictFilter(e.target.value)}
-          className="filter-select"
-        >
-          <option value="all">All Verdicts</option>
-          {verdicts.map((v) => (
-            <option key={v} value={v}>
-              {v}
-            </option>
-          ))}
-        </select>
-        <select
-          value={categoryFilter}
-          onChange={(e) => setCategoryFilter(e.target.value)}
-          className="filter-select"
-        >
-          <option value="all">All Categories</option>
-          {categories.map((cat) => (
-            <option key={cat} value={cat}>
-              {cat}
-            </option>
-          ))}
-        </select>
-        <select
-          value={hs2Filter}
-          onChange={(e) => setHs2Filter(e.target.value)}
-          className="filter-select"
-        >
-          <option value="all">All HS2 Chapters</option>
-          {hs2Values.map((hs2) => (
-            <option key={hs2} value={hs2}>
-              {hs2}
-            </option>
-          ))}
-        </select>
-        <select
-          value={entryTierFilter}
-          onChange={(e) => setEntryTierFilter(e.target.value)}
-          className="filter-select"
-        >
-          <option value="all">All Entry Tiers</option>
-          {entryTiers.map((tier) => (
-            <option key={tier} value={tier}>
-              {tier}
-            </option>
-          ))}
-        </select>
-        <div className="filter-group">
-          <label>Min Score: {minScoreFilter}</label>
-          <input
-            type="range"
-            min="0"
-            max="100"
-            value={minScoreFilter}
-            onChange={(e) => setMinScoreFilter(Number(e.target.value))}
-            className="filter-slider"
-          />
-        </div>
-      </div>
+      <SearchFilter
+        data={products}
+        onFilter={setFiltered}
+        searchFields={['hs4', 'hs2', 'commodity', 'category']}
+        filters={[
+          { key: 'verdict', label: 'Verdict' },
+          { key: 'entry_tier', label: 'Tier' },
+          { key: 'category', label: 'Category' },
+        ]}
+        placeholder="Search by HS4 code, commodity, or category..."
+      />
 
       {/* Top 25 Chart */}
       <div className="chart-section">
@@ -305,7 +200,7 @@ const HS4Products = () => {
             <ZAxis range={[100]} />
             <Tooltip cursor={{ strokeDasharray: '3 3' }} />
             <Legend />
-            {verdicts.map((verdict) => (
+            {['PASS', 'MAYBE', 'WATCH', 'DROP'].map((verdict) => (
               <Scatter
                 key={verdict}
                 name={verdict}
@@ -319,7 +214,7 @@ const HS4Products = () => {
 
       {/* Full Table */}
       <div className="table-section">
-        <h3>All HS4 Products ({filteredProducts.length})</h3>
+        <h3>All HS4 Products ({sortedFiltered.length})</h3>
         <div className="table-wrapper">
           <table className="data-table">
             <thead>
@@ -514,8 +409,8 @@ const HS4Products = () => {
         {/* Pagination */}
         <div className="pagination">
           <div className="pagination-info">
-            Showing {startIdx + 1}-{Math.min(endIdx, filteredProducts.length)} of{' '}
-            {filteredProducts.length} products
+            Showing {startIdx + 1}-{Math.min(endIdx, sortedFiltered.length)} of{' '}
+            {sortedFiltered.length} products
           </div>
           <div className="pagination-controls">
             <button

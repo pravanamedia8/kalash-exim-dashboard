@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import SearchFilter from '../components/SearchFilter';
 
 const card = {background:'rgba(17,24,39,0.8)', border:'1px solid rgba(148,163,184,0.1)', borderRadius:12, padding:20};
 const VERDICT_COLORS = { PASS:'#34d399', MAYBE:'#fbbf24', WATCH:'#a78bfa', DROP:'#f87171' };
@@ -13,7 +14,9 @@ export default function HSExplorer() {
   const [loading, setLoading] = useState(true);
   const [selectedHs2, setSelectedHs2] = useState(null);
   const [selectedHs4, setSelectedHs4] = useState(null);
-  const [search, setSearch] = useState('');
+  const [filteredHs2, setFilteredHs2] = useState([]);
+  const [filteredHs4, setFilteredHs4] = useState([]);
+  const [filteredHs8, setFilteredHs8] = useState([]);
   const [sort, setSort] = useState({col:'chapter_score',dir:'desc'});
 
   useEffect(() => {
@@ -50,10 +53,8 @@ export default function HSExplorer() {
   const thStyle = {textAlign:'left',padding:'8px 10px',color:'#94a3b8',fontSize:11,borderBottom:'1px solid rgba(148,163,184,0.1)',cursor:'pointer',position:'sticky',top:0,background:'rgba(17,24,39,0.95)',textTransform:'uppercase'};
 
   const renderHs2 = () => {
-    let rows = hs2Data;
-    if(search) rows = rows.filter(r=>(r.hs2+' '+r.description).toLowerCase().includes(search.toLowerCase()));
-    rows = [...rows].sort((a,b)=>{ let av=a[sort.col]??-Infinity,bv=b[sort.col]??-Infinity; return sort.dir==='asc'?(av<bv?-1:1):(av>bv?-1:1); });
-    const top15 = rows.slice(0,15).map(r=>({name:`Ch ${r.hs2}`,score:r.chapter_score||0}));
+    const rows = [...filteredHs2].sort((a,b)=>{ let av=a[sort.col]??-Infinity,bv=b[sort.col]??-Infinity; return sort.dir==='asc'?(av<bv?-1:1):(av>bv?-1:1); });
+    const top15 = hs2Data.slice(0,15).map(r=>({name:`Ch ${r.hs2}`,score:r.chapter_score||0}));
     return (<>
       <div style={{...card,marginBottom:24}}>
         <h3 style={{color:'#e2e8f0',fontSize:14,marginBottom:12}}>Top 15 HS2 Chapters by Score</h3>
@@ -65,9 +66,13 @@ export default function HSExplorer() {
         </ResponsiveContainer>
       </div>
       <div style={card}>
-        <div style={{display:'flex',gap:12,marginBottom:12}}>
-          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search HS2 / description..." style={{background:'#1e293b',color:'#e2e8f0',border:'1px solid rgba(148,163,184,0.2)',borderRadius:6,padding:'6px 12px',fontSize:12,flex:1}} />
-        </div>
+        <SearchFilter
+          data={hs2Data}
+          onFilter={setFilteredHs2}
+          searchFields={['hs2', 'description']}
+          filters={[{ key: 'verdict', label: 'Verdict' }]}
+          placeholder="Search HS2 / description..."
+        />
         <div style={{maxHeight:500,overflowY:'auto'}}>
           <table style={{width:'100%',borderCollapse:'collapse'}}>
             <thead><tr>
@@ -93,15 +98,18 @@ export default function HSExplorer() {
   };
 
   const renderHs4 = () => {
-    let rows = selectedHs2 ? hs4Data.filter(h=>h.hs2===selectedHs2) : hs4Data;
-    if(search) rows = rows.filter(r=>(r.hs4+' '+r.commodity).toLowerCase().includes(search.toLowerCase()));
-    rows = [...rows].sort((a,b)=>{ let av=a[sort.col]??-Infinity,bv=b[sort.col]??-Infinity; return sort.dir==='asc'?(av<bv?-1:1):(av>bv?-1:1); });
+    const hs4Source = selectedHs2 ? hs4Data.filter(h=>h.hs2===selectedHs2) : hs4Data;
+    const rows = [...filteredHs4].sort((a,b)=>{ let av=a[sort.col]??-Infinity,bv=b[sort.col]??-Infinity; return sort.dir==='asc'?(av<bv?-1:1):(av>bv?-1:1); });
     return (
       <div style={card}>
-        <div style={{display:'flex',gap:12,marginBottom:12}}>
-          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search HS4 / commodity..." style={{background:'#1e293b',color:'#e2e8f0',border:'1px solid rgba(148,163,184,0.2)',borderRadius:6,padding:'6px 12px',fontSize:12,flex:1}} />
-          {selectedHs2 && <span style={{color:'#60a5fa',fontSize:12,padding:'6px'}}>Chapter {selectedHs2}</span>}
-        </div>
+        <SearchFilter
+          data={hs4Source}
+          onFilter={setFilteredHs4}
+          searchFields={['hs4', 'commodity', 'category']}
+          filters={[{ key: 'verdict', label: 'Verdict' }]}
+          placeholder="Search HS4 / commodity..."
+        />
+        {selectedHs2 && <span style={{color:'#60a5fa',fontSize:12,padding:'6px',display:'inline-block',marginBottom:8}}>Chapter {selectedHs2}</span>}
         <div style={{maxHeight:600,overflowY:'auto'}}>
           <table style={{width:'100%',borderCollapse:'collapse'}}>
             <thead><tr>
@@ -129,7 +137,14 @@ export default function HSExplorer() {
 
   const renderHs8 = () => (
     <div style={card}>
-      <h3 style={{color:'#e2e8f0',fontSize:14,marginBottom:12}}>HS8 Products for {selectedHs4} ({hs8Data.length})</h3>
+      <h3 style={{color:'#e2e8f0',fontSize:14,marginBottom:12}}>HS8 Products for {selectedHs4} ({filteredHs8.length})</h3>
+      <SearchFilter
+        data={hs8Data}
+        onFilter={setFilteredHs8}
+        searchFields={['hs8', 'commodity']}
+        filters={[]}
+        placeholder="Search HS8 / commodity..."
+      />
       <div style={{maxHeight:600,overflowY:'auto'}}>
         <table style={{width:'100%',borderCollapse:'collapse'}}>
           <thead><tr>
@@ -137,7 +152,7 @@ export default function HSExplorer() {
               <th key={h} style={thStyle}>{h}</th>
             ))}
           </tr></thead>
-          <tbody>{hs8Data.map((r,i)=>(
+          <tbody>{filteredHs8.map((r,i)=>(
             <tr key={i} style={{borderBottom:'1px solid rgba(148,163,184,0.05)'}}>
               <td style={{padding:'6px 10px',color:'#60a5fa',fontSize:11,fontFamily:'monospace'}}>{r.hs8}</td>
               <td style={{padding:'6px 10px',color:'#e2e8f0',fontSize:12,maxWidth:300,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.commodity}</td>

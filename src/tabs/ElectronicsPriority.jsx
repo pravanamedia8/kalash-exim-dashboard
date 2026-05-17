@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from 'recharts';
+import SearchFilter from '../components/SearchFilter';
 
 const card = {background:'rgba(17,24,39,0.8)',border:'1px solid rgba(148,163,184,0.1)',borderRadius:12,padding:20};
 const MV = {EXCELLENT:'#34d399',GOOD:'#60a5fa',MODERATE:'#fbbf24',THIN:'#f59e0b',NEGATIVE:'#f87171',NO_DATA:'#94a3b8'};
@@ -16,7 +17,7 @@ export default function ElectronicsPriority() {
   const [loading, setLoading] = useState(true);
   const [sort, setSort] = useState({col:'total_cif_usd',dir:'desc'});
   const [expanded, setExpanded] = useState(null);
-  const [filter, setFilter] = useState('all');
+  const [sfFiltered, setSfFiltered] = useState([]);
 
   useEffect(() => {
     supabase.from('electronics_priority_hs8').select('*')
@@ -39,17 +40,8 @@ export default function ElectronicsPriority() {
   const totalShipments = data.reduce((a,r)=>a+(r.shipment_count||0),0);
   const avgMargin = positive.length ? Math.round(positive.reduce((a,r)=>a+r.real_margin_pct,0)/positive.length*10)/10 : 0;
 
-  // Filter
-  const filtered = filter==='all' ? data
-    : filter==='researched' ? data.filter(r=>r.selling_price_research_status==='completed')
-    : filter==='pending' ? data.filter(r=>['pending','in_progress'].includes(r.selling_price_research_status))
-    : filter==='positive' ? data.filter(r=>r.real_margin_pct>0)
-    : filter==='excellent' ? data.filter(r=>r.margin_verdict==='EXCELLENT')
-    : filter==='good' ? data.filter(r=>r.margin_verdict==='GOOD')
-    : data;
-
   // Sort
-  const sorted = [...filtered].sort((a,b) => {
+  const sorted = [...sfFiltered].sort((a,b) => {
     const av=a[sort.col], bv=b[sort.col];
     if(av==null&&bv==null)return 0; if(av==null)return 1; if(bv==null)return -1;
     return sort.dir==='asc'?(av>bv?1:-1):(av<bv?1:-1);
@@ -150,17 +142,7 @@ export default function ElectronicsPriority() {
         </div>
       </div>
 
-      {/* Filters */}
-      <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
-        {[{id:'all',label:'All'},{id:'researched',label:'Researched'},{id:'pending',label:'Pending'},{id:'positive',label:'Positive Margin'},{id:'excellent',label:'EXCELLENT'},{id:'good',label:'GOOD'}].map(f=>(
-          <button key={f.id} onClick={()=>setFilter(f.id)} style={{
-            padding:'6px 14px',borderRadius:8,border:'1px solid',fontSize:12,cursor:'pointer',
-            background:filter===f.id?'rgba(79,140,255,0.2)':'transparent',
-            borderColor:filter===f.id?'#4f8cff':'rgba(148,163,184,0.2)',
-            color:filter===f.id?'#60a5fa':'#94a3b8'
-          }}>{f.label} ({f.id==='all'?total:f.id==='researched'?researched:f.id==='pending'?pending+inProg:f.id==='positive'?positive.length:f.id==='excellent'?excellent:good})</button>
-        ))}
-      </div>
+      <SearchFilter data={data} onFilter={setSfFiltered} searchFields={['hs8','commodity']} filters={[{key:'margin_verdict',label:'Verdict'},{key:'selling_price_research_status',label:'Status'}]} placeholder="Search HS8, product..." counts />
 
       {/* Main Table */}
       <div style={{...card,padding:0,overflow:'auto'}}>

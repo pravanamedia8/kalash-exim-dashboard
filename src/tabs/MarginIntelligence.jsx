@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, ScatterChart, Scatter, ZAxis } from 'recharts';
+import SearchFilter from '../components/SearchFilter';
 
 const card = {background:'rgba(17,24,39,0.8)', border:'1px solid rgba(148,163,184,0.1)', borderRadius:12, padding:20};
 const MV = { EXCELLENT:'#34d399', GOOD:'#60a5fa', MODERATE:'#fbbf24', THIN:'#f59e0b', NEGATIVE:'#f87171' };
@@ -8,9 +9,8 @@ const MV = { EXCELLENT:'#34d399', GOOD:'#60a5fa', MODERATE:'#fbbf24', THIN:'#f59
 export default function MarginIntelligence() {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [verdictFilter, setVerdictFilter] = useState('all');
+  const [sfFiltered, setSfFiltered] = useState([]);
   const [sort, setSort] = useState({col:'real_margin_pct',dir:'desc'});
-  const [search, setSearch] = useState('');
 
   useEffect(() => {
     supabase.from('hs8_margin_analysis').select('*').order('total_cif_usd',{ascending:false}).then(({data:d})=>{ setData(d||[]); setLoading(false); });
@@ -44,9 +44,7 @@ export default function MarginIntelligence() {
     fill: MV[r.margin_verdict]||'#94a3b8'
   }));
 
-  let filtered = data;
-  if(verdictFilter!=='all') filtered = filtered.filter(r=>r.margin_verdict===verdictFilter);
-  if(search) filtered = filtered.filter(r=>(r.hs8+' '+r.commodity+' '+r.hs4).toLowerCase().includes(search.toLowerCase()));
+  let filtered = [...sfFiltered];
   filtered.sort((a,b)=>{
     let av=a[sort.col]??-Infinity, bv=b[sort.col]??-Infinity;
     if(av<bv) return sort.dir==='asc'?-1:1;
@@ -90,15 +88,10 @@ export default function MarginIntelligence() {
         </div>
       </div>
 
+      <SearchFilter data={data} onFilter={setSfFiltered} searchFields={['hs8','hs4','commodity']} filters={[{key:'margin_verdict',label:'Verdict'}]} placeholder="Search HS8 / HS4 / commodity..." />
+
       <div style={card}>
-        <div style={{display:'flex',gap:12,marginBottom:16,alignItems:'center',flexWrap:'wrap'}}>
-          <h3 style={{color:'#e2e8f0',fontSize:14,margin:0}}>HS8 Margin Analysis ({filtered.length})</h3>
-          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search HS8 / HS4 / commodity..." style={{background:'#1e293b',color:'#e2e8f0',border:'1px solid rgba(148,163,184,0.2)',borderRadius:6,padding:'6px 12px',fontSize:12,flex:1,minWidth:180}} />
-          <select value={verdictFilter} onChange={e=>setVerdictFilter(e.target.value)} style={{background:'#1e293b',color:'#e2e8f0',border:'1px solid rgba(148,163,184,0.2)',borderRadius:6,padding:'6px 8px',fontSize:12}}>
-            <option value="all">All Verdicts</option>
-            {['EXCELLENT','GOOD','MODERATE','THIN','NEGATIVE'].map(v=><option key={v} value={v}>{v} ({verdicts[v]||0})</option>)}
-          </select>
-        </div>
+        <h3 style={{color:'#e2e8f0',fontSize:14,marginBottom:16}}>HS8 Margin Analysis ({filtered.length})</h3>
         <div style={{maxHeight:500,overflowY:'auto'}}>
           <table style={{width:'100%',borderCollapse:'collapse'}}>
             <thead><tr>

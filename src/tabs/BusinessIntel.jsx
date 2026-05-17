@@ -4,6 +4,7 @@ import {
   PieChart, Pie, Legend
 } from 'recharts';
 import { supabase } from '../supabaseClient';
+import SearchFilter from '../components/SearchFilter';
 
 const COLORS = ['#4f8cff', '#34d399', '#fbbf24', '#f87171', '#a78bfa', '#fb923c'];
 
@@ -13,6 +14,7 @@ export default function BusinessIntel() {
   const [businessIntel, setBusinessIntel] = useState(null);
   const [shortlist, setShortlist] = useState([]);
   const [error, setError] = useState(null);
+  const [filteredShortlist, setFilteredShortlist] = useState([]);
 
   useEffect(() => {
     const loadData = async () => {
@@ -302,6 +304,17 @@ export default function BusinessIntel() {
         <div className="card-title">📊 Market Opportunity Scoring</div>
 
         {shortlist.length > 0 && (shortlist.some(p => p.margin_pct || p.market_opportunity)) ? (
+          <>
+          <SearchFilter
+            data={shortlist.filter(p => p.margin_pct || p.market_opportunity)}
+            onFilter={setFilteredShortlist}
+            searchFields={['hs4','commodity']}
+            filters={[
+              { key: 'market_opportunity', label: 'Opportunity' },
+              { key: 'verdict', label: 'Verdict' },
+            ]}
+            placeholder="Search products..."
+          />
           <table style={{ width: '100%', fontSize: '11px', marginTop: '12px' }}>
             <thead>
               <tr style={{ backgroundColor: 'var(--bg3)', borderBottom: '1px solid var(--border)' }}>
@@ -314,7 +327,7 @@ export default function BusinessIntel() {
               </tr>
             </thead>
             <tbody>
-              {shortlist.filter(p => p.margin_pct || p.market_opportunity).map((product, idx) => (
+              {filteredShortlist.map((product, idx) => (
                 <tr key={idx} style={{ borderBottom: '1px solid var(--border)' }}>
                   <td style={{ padding: '10px', color: 'var(--tx)' }}>{product.hs4 || '-'}</td>
                   <td style={{ padding: '10px', color: 'var(--tx)' }}>{product.commodity || '-'}</td>
@@ -337,6 +350,7 @@ export default function BusinessIntel() {
               ))}
             </tbody>
           </table>
+          </>
         ) : (
           <div style={{ color: 'var(--tx2)', textAlign: 'center', padding: '32px' }}>
             Opportunity data will appear as products are analyzed

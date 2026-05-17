@@ -1,15 +1,15 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, Legend } from 'recharts';
+import SearchFilter from '../components/SearchFilter';
 
 const card = {background:'rgba(17,24,39,0.8)', border:'1px solid rgba(148,163,184,0.1)', borderRadius:12, padding:20};
 
 export default function BuyerIntelligence() {
   const [buyers, setBuyers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [filtered, setFiltered] = useState([]);
   const [sort, setSort] = useState({col:'total_cif_usd',dir:'desc'});
-  const [search, setSearch] = useState('');
-  const [hs4Filter, setHs4Filter] = useState('all');
 
   useEffect(() => {
     supabase.from('volza_top_buyers').select('*').order('total_cif_usd',{ascending:false}).limit(2500).then(({data})=>{ setBuyers(data||[]); setLoading(false); });
@@ -19,7 +19,6 @@ export default function BuyerIntelligence() {
 
   const totalCIF = buyers.reduce((a,b)=>a+(b.total_cif_usd||0),0);
   const uniqueCompanies = new Set(buyers.map(b=>b.company_name)).size;
-  const hs4s = [...new Set(buyers.map(b=>b.hs4).filter(Boolean))];
 
   const top10 = buyers.slice(0,10).map(b=>({name:b.company_name?.substring(0,25)||'Unknown',cif:b.total_cif_usd||0}));
 
@@ -28,6 +27,8 @@ export default function BuyerIntelligence() {
   const stateData = Object.entries(stateMap).sort((a,b)=>b[1]-a[1]).slice(0,8).map(([name,value])=>({name,value}));
   const stateColors = ['#34d399','#60a5fa','#fbbf24','#a78bfa','#f87171','#06b6d4','#f59e0b','#e879f9'];
 
+  const hs4s = [...new Set(buyers.map(b=>b.hs4).filter(Boolean))];
+
   const kpis = [
     {label:'Total Buyers',value:buyers.length,color:'#60a5fa'},
     {label:'Unique Companies',value:uniqueCompanies,color:'#34d399'},
@@ -35,10 +36,7 @@ export default function BuyerIntelligence() {
     {label:'Total CIF',value:`$${(totalCIF/1e6).toFixed(0)}M`,color:'#a78bfa'},
   ];
 
-  let filtered = buyers;
-  if(hs4Filter!=='all') filtered = filtered.filter(b=>b.hs4===hs4Filter);
-  if(search) filtered = filtered.filter(b=>(b.company_name+' '+b.city+' '+b.hs4).toLowerCase().includes(search.toLowerCase()));
-  filtered.sort((a,b)=>{
+  const sorted = [...filtered].sort((a,b)=>{
     let av=a[sort.col]??-Infinity, bv=b[sort.col]??-Infinity;
     if(typeof av==='string') { av=(av||'').toLowerCase(); bv=(bv||'').toLowerCase(); }
     if(av<bv) return sort.dir==='asc'?-1:1;
@@ -81,14 +79,7 @@ export default function BuyerIntelligence() {
       </div>
 
       <div style={card}>
-        <div style={{display:'flex',gap:12,marginBottom:16,alignItems:'center',flexWrap:'wrap'}}>
-          <h3 style={{color:'#e2e8f0',fontSize:14,margin:0}}>Buyer Table ({filtered.length})</h3>
-          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search company / city / HS4..." style={{background:'#1e293b',color:'#e2e8f0',border:'1px solid rgba(148,163,184,0.2)',borderRadius:6,padding:'6px 12px',fontSize:12,flex:1,minWidth:180}} />
-          <select value={hs4Filter} onChange={e=>setHs4Filter(e.target.value)} style={{background:'#1e293b',color:'#e2e8f0',border:'1px solid rgba(148,163,184,0.2)',borderRadius:6,padding:'6px 8px',fontSize:12}}>
-            <option value="all">All HS4 ({hs4s.length})</option>
-            {hs4s.sort().map(h=><option key={h} value={h}>{h}</option>)}
-          </select>
-        </div>
+        <SearchFilter data={buyers} onFilter={setFiltered} searchFields={['company_name','city','hs4']} filters={[{key:'hs4',label:'HS4'}]} placeholder="Search company / city / HS4..." />
         <div style={{maxHeight:500,overflowY:'auto'}}>
           <table style={{width:'100%',borderCollapse:'collapse'}}>
             <thead><tr>
@@ -96,7 +87,7 @@ export default function BuyerIntelligence() {
                 <th key={col} onClick={()=>toggleSort(col)} style={thStyle}>{label}{sort.col===col?(sort.dir==='asc'?' ▲':' ▼'):''}</th>
               ))}
             </tr></thead>
-            <tbody>{filtered.slice(0,200).map((b,i)=>(
+            <tbody>{sorted.slice(0,200).map((b,i)=>(
               <tr key={i} style={{borderBottom:'1px solid rgba(148,163,184,0.05)'}}>
                 <td style={{padding:'6px 10px',color:'#e2e8f0',fontSize:12,maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{b.company_name}</td>
                 <td style={{padding:'6px 10px',color:'#60a5fa',fontSize:11,fontFamily:'monospace'}}>{b.hs4}</td>

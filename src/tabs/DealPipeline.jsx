@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../supabaseClient';
+import SearchFilter from '../components/SearchFilter';
 
 const COLORS = { pass:'#34d399', maybe:'#fbbf24', watch:'#a78bfa', drop:'#f87171', blue:'#60a5fa', cyan:'#22d3ee', orange:'#fb923c', purple:'#a78bfa' };
 const RGB = { pass:'rgba(52,211,153,0.12)', maybe:'rgba(251,191,36,0.12)', watch:'rgba(167,139,250,0.12)', drop:'rgba(248,113,113,0.12)', blue:'rgba(96,165,250,0.12)', cyan:'rgba(34,211,238,0.12)', orange:'rgba(251,146,60,0.12)', purple:'rgba(167,139,250,0.12)' };
@@ -35,10 +36,7 @@ const KPI = ({ label, value, color='#60a5fa', sub='' }) => (
 export default function DealPipeline() {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const [stageFilter, setStageFilter] = useState('');
-  const [priorityFilter, setPriorityFilter] = useState('');
-  const [modelFilter, setModelFilter] = useState('');
+  const [filteredData, setFilteredData] = useState([]);
   const [sortCol, setSortCol] = useState('total_value_usd');
   const [sortDir, setSortDir] = useState('desc');
 
@@ -51,18 +49,14 @@ export default function DealPipeline() {
   }, []);
 
   const filtered = useMemo(() => {
-    let f = data;
-    if (search) f = f.filter(r => (r.buyer_name||'').toLowerCase().includes(search.toLowerCase()) || (r.product_desc||'').toLowerCase().includes(search.toLowerCase()) || (r.hs4||'').includes(search));
-    if (stageFilter) f = f.filter(r => r.stage === stageFilter);
-    if (priorityFilter) f = f.filter(r => r.priority === priorityFilter);
-    if (modelFilter) f = f.filter(r => r.trading_model === modelFilter);
-    f = [...f].sort((a,b) => {
+    let f = [...filteredData];
+    f.sort((a,b) => {
       const av = a[sortCol], bv = b[sortCol];
       if (av == null) return 1; if (bv == null) return -1;
       return sortDir === 'asc' ? (av > bv ? 1 : -1) : (av < bv ? 1 : -1);
     });
     return f;
-  }, [data, search, stageFilter, priorityFilter, modelFilter, sortCol, sortDir]);
+  }, [filteredData, sortCol, sortDir]);
 
   const active = useMemo(() => data.filter(r => !['lost','on_hold','completed','recurring'].includes(r.stage)), [data]);
 
@@ -124,22 +118,13 @@ export default function DealPipeline() {
       </div>
 
       {/* Filters */}
-      <div style={{ display:'flex', gap:'8px', flexWrap:'wrap', marginBottom:'12px', alignItems:'center' }}>
-        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search buyer, product, HS4..." style={{ padding:'6px 10px', borderRadius:'6px', border:'1px solid rgba(148,163,184,0.15)', background:'#1a2035', color:'#e2e8f0', fontSize:'12px', width:'200px' }} />
-        <select value={stageFilter} onChange={e=>setStageFilter(e.target.value)} style={{ padding:'6px 10px', borderRadius:'6px', border:'1px solid rgba(148,163,184,0.15)', background:'#1a2035', color:'#e2e8f0', fontSize:'12px' }}>
-          <option value="">All Stages</option>
-          {STAGES.map(s => <option key={s} value={s}>{s.replace(/_/g,' ')}</option>)}
-        </select>
-        <select value={priorityFilter} onChange={e=>setPriorityFilter(e.target.value)} style={{ padding:'6px 10px', borderRadius:'6px', border:'1px solid rgba(148,163,184,0.15)', background:'#1a2035', color:'#e2e8f0', fontSize:'12px' }}>
-          <option value="">All Priorities</option>
-          {['high','medium','low'].map(p => <option key={p} value={p}>{p}</option>)}
-        </select>
-        <select value={modelFilter} onChange={e=>setModelFilter(e.target.value)} style={{ padding:'6px 10px', borderRadius:'6px', border:'1px solid rgba(148,163,184,0.15)', background:'#1a2035', color:'#e2e8f0', fontSize:'12px' }}>
-          <option value="">All Models</option>
-          {['REGULAR','SPOT','BROKER','MIXED'].map(m => <option key={m} value={m}>{m}</option>)}
-        </select>
-        <span style={{ color:'#94a3b8', fontSize:'12px' }}>{filtered.length} deals</span>
-      </div>
+      <SearchFilter
+        data={data}
+        onFilter={setFilteredData}
+        searchFields={['buyer_name','product_desc','hs4']}
+        filters={[{key:'stage',label:'Stage'},{key:'priority',label:'Priority'},{key:'trading_model',label:'Model'}]}
+        placeholder="Search buyer, product, HS4..."
+      />
 
       {/* Table */}
       <div style={{ overflowX:'auto' }}>

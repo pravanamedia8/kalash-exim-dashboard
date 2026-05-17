@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
 import { fetchApi } from '../api';
+import SearchFilter from '../components/SearchFilter';
 
 const COLORS = ['#4f8cff','#34d399','#fbbf24','#f87171','#a78bfa'];
 
@@ -18,9 +19,7 @@ export default function HSAnalysis() {
   const [loading, setLoading] = useState(true);
   const [chapters, setChapters] = useState([]);
   const [allHS4, setAllHS4] = useState([]);
-  const [hs2Filter, setHs2Filter] = useState('all');
-  const [verdictFilter, setVerdictFilter] = useState('all');
-  const [search, setSearch] = useState('');
+  const [filteredHS4, setFilteredHS4] = useState([]);
   const [page, setPage] = useState(0);
   const PAGE_SIZE = 50;
 
@@ -30,15 +29,6 @@ export default function HSAnalysis() {
       .catch(console.error)
       .finally(() => setLoading(false));
   }, []);
-
-  const filteredHS4 = useMemo(() => {
-    return allHS4.filter(p => {
-      const matchHs2 = hs2Filter === 'all' || p.hs2 === hs2Filter;
-      const matchVerdict = verdictFilter === 'all' || (p.verdict||'').toUpperCase() === verdictFilter;
-      const matchSearch = !search || (p.commodity||'').toLowerCase().includes(search.toLowerCase()) || (p.hs4+'').includes(search);
-      return matchHs2 && matchVerdict && matchSearch;
-    });
-  }, [allHS4, hs2Filter, verdictFilter, search]);
 
   const totalPages = Math.ceil(filteredHS4.length / PAGE_SIZE);
   const displayHS4 = filteredHS4.slice(page * PAGE_SIZE, (page+1) * PAGE_SIZE);
@@ -137,17 +127,16 @@ export default function HSAnalysis() {
 
       <div className="card">
         <div className="card-title">All HS4 Products ({filteredHS4.length} of {allHS4.length})</div>
-        <div className="filters">
-          <input type="text" className="filter-input" placeholder="Search HS4, commodity..." value={search} onChange={e=>{setSearch(e.target.value);setPage(0);}} />
-          <select className="filter-select" value={hs2Filter} onChange={e=>{setHs2Filter(e.target.value);setPage(0);}}>
-            <option value="all">All HS2</option>
-            {[...new Set(allHS4.map(p=>p.hs2))].sort().map(h=><option key={h} value={h}>HS {h}</option>)}
-          </select>
-          <select className="filter-select" value={verdictFilter} onChange={e=>{setVerdictFilter(e.target.value);setPage(0);}}>
-            <option value="all">All Verdicts</option>
-            <option value="PASS">PASS</option><option value="MAYBE">MAYBE</option><option value="WATCH">WATCH</option><option value="DROP">DROP</option>
-          </select>
-        </div>
+        <SearchFilter
+          data={allHS4}
+          onFilter={setFilteredHS4}
+          searchFields={['hs4', 'hs2', 'commodity', 'category']}
+          filters={[
+            { key: 'verdict', label: 'Verdict' },
+            { key: 'hs2', label: 'HS2' },
+          ]}
+          placeholder="Search HS4, commodity..."
+        />
         <div style={{overflowX:'auto'}}>
         <table>
           <thead>

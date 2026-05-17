@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, Legend } from 'recharts';
+import SearchFilter from '../components/SearchFilter';
 
 const card = {background:'rgba(17,24,39,0.8)', border:'1px solid rgba(148,163,184,0.1)', borderRadius:12, padding:20};
 const VERDICT_COLORS = { PURSUE:'#34d399', STRONG:'#60a5fa', MODERATE:'#fbbf24', DROP:'#f87171' };
@@ -8,7 +9,7 @@ const VERDICT_COLORS = { PURSUE:'#34d399', STRONG:'#60a5fa', MODERATE:'#fbbf24',
 export default function ScoringDashboard() {
   const [scores, setScores] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [verdictFilter, setVerdictFilter] = useState('all');
+  const [filteredScores, setFilteredScores] = useState([]);
   const [sort, setSort] = useState({col:'total_score',dir:'desc'});
 
   useEffect(() => {
@@ -43,7 +44,7 @@ export default function ScoringDashboard() {
     {label:'Top Score',value:scores[0]?.total_score||0,color:'#a78bfa'},
   ];
 
-  let filtered = verdictFilter==='all' ? scores : scores.filter(s=>s.verdict===verdictFilter);
+  let filtered = [...filteredScores];
   filtered.sort((a,b)=>{
     let av=a[sort.col], bv=b[sort.col];
     if(av<bv) return sort.dir==='asc'?-1:1;
@@ -86,13 +87,14 @@ export default function ScoringDashboard() {
       </div>
 
       <div style={card}>
-        <div style={{display:'flex',gap:12,marginBottom:16,alignItems:'center'}}>
-          <h3 style={{color:'#e2e8f0',fontSize:14,margin:0}}>Scoring Table ({filtered.length})</h3>
-          <select value={verdictFilter} onChange={e=>setVerdictFilter(e.target.value)} style={{background:'#1e293b',color:'#e2e8f0',border:'1px solid rgba(148,163,184,0.2)',borderRadius:6,padding:'6px 8px',fontSize:12}}>
-            <option value="all">All Verdicts</option>
-            {Object.keys(verdicts).map(v=><option key={v} value={v}>{v} ({verdicts[v]})</option>)}
-          </select>
-        </div>
+        <h3 style={{color:'#e2e8f0',fontSize:14,marginBottom:12}}>Scoring Table ({filtered.length})</h3>
+        <SearchFilter
+          data={scores}
+          onFilter={setFilteredScores}
+          searchFields={['hs4','verdict']}
+          filters={[{key:'verdict',label:'Verdict'}]}
+          placeholder="Search scores..."
+        />
         <div style={{maxHeight:500,overflowY:'auto'}}>
           <table style={{width:'100%',borderCollapse:'collapse'}}>
             <thead><tr>

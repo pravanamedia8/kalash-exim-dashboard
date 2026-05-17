@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../supabaseClient';
+import SearchFilter from '../components/SearchFilter';
 
 const fmt = (v, d = 0) => v == null ? '—' : Number(v).toLocaleString('en-IN', { maximumFractionDigits: d });
 const fmtUSD = v => v == null ? '—' : '$' + Number(v).toLocaleString('en-US', { maximumFractionDigits: 2 });
@@ -10,10 +11,9 @@ const dispColor = v => ({ LOW: '#34d399', MODERATE: '#fbbf24', HIGH: '#f87171' }
 export default function HS8VolzaDetail() {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
+  const [sfFiltered, setSfFiltered] = useState([]);
   const [dispFilter, setDispFilter] = useState('ALL');
   const [qualFilter, setQualFilter] = useState('ALL');
-  const [hs4Filter, setHs4Filter] = useState('ALL');
   const [sortCol, setSortCol] = useState('total_cif_usd');
   const [sortDir, setSortDir] = useState('desc');
   const [view, setView] = useState('rates');
@@ -26,17 +26,10 @@ export default function HS8VolzaDetail() {
     });
   }, []);
 
-  const hs4Options = useMemo(() => [...new Set(data.map(r => r.hs4).filter(Boolean))].sort(), [data]);
-
   const filtered = useMemo(() => {
-    let f = data;
-    if (search) {
-      const s = search.toLowerCase();
-      f = f.filter(r => (r.hs8 || '').includes(s) || (r.hs4 || '').includes(s) || (r.commodity || '').toLowerCase().includes(s));
-    }
+    let f = [...sfFiltered];
     if (dispFilter !== 'ALL') f = f.filter(r => r.rate_dispersion === dispFilter);
     if (qualFilter !== 'ALL') f = f.filter(r => r.rate_data_quality === qualFilter);
-    if (hs4Filter !== 'ALL') f = f.filter(r => r.hs4 === hs4Filter);
     f.sort((a, b) => {
       const av = a[sortCol], bv = b[sortCol];
       if (av == null && bv == null) return 0;
@@ -45,7 +38,7 @@ export default function HS8VolzaDetail() {
       return sortDir === 'asc' ? (av > bv ? 1 : -1) : (av < bv ? 1 : -1);
     });
     return f;
-  }, [data, search, dispFilter, qualFilter, hs4Filter, sortCol, sortDir]);
+  }, [sfFiltered, dispFilter, qualFilter, sortCol, sortDir]);
 
   const stats = useMemo(() => {
     const withData = data.filter(r => r.median_unit_rate_usd != null);
@@ -99,9 +92,11 @@ export default function HS8VolzaDetail() {
         ))}
       </div>
 
-      {/* Filters */}
+      {/* Search & HS4 Filter */}
+      <SearchFilter data={data} onFilter={setSfFiltered} searchFields={['hs8','hs4','commodity']} filters={[{key:'hs4',label:'HS4'}]} placeholder="Search HS8, HS4, commodity..." />
+
+      {/* Specialized Filters */}
       <div className="card" style={{ padding: 14, marginBottom: 16, display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
-        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search HS8, HS4, commodity..." style={{ flex: '1 1 200px', padding: '8px 12px', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--tx1)', fontSize: 13 }} />
         <select value={dispFilter} onChange={e => setDispFilter(e.target.value)} style={{ padding: '8px 12px', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--tx1)', fontSize: 13 }}>
           <option value="ALL">All Dispersion</option>
           <option value="LOW">LOW</option>
@@ -113,10 +108,6 @@ export default function HS8VolzaDetail() {
           <option value="GOOD">GOOD</option>
           <option value="FAIR">FAIR</option>
           <option value="POOR">POOR</option>
-        </select>
-        <select value={hs4Filter} onChange={e => setHs4Filter(e.target.value)} style={{ padding: '8px 12px', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--tx1)', fontSize: 13, maxWidth: 140 }}>
-          <option value="ALL">All HS4</option>
-          {hs4Options.map(h => <option key={h} value={h}>{h}</option>)}
         </select>
         <div style={{ display: 'flex', gap: 4 }}>
           {[['rates', 'Unit Rates'], ['costs', 'Landed Costs'], ['buyers', 'Buyers & Shippers']].map(([v, l]) => (

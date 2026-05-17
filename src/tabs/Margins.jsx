@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { supabase } from '../supabaseClient';
+import SearchFilter from '../components/SearchFilter';
 
 const COLORS = ['#4f8cff', '#34d399', '#fbbf24', '#f87171'];
 
 export default function Margins() {
   const [loading, setLoading] = useState(true);
   const [margins, setMargins] = useState([]);
+  const [filteredMargins, setFilteredMargins] = useState([]);
   const [marginChartData, setMarginChartData] = useState([]);
   const [priceChartData, setPriceChartData] = useState([]);
 
@@ -127,6 +129,12 @@ export default function Margins() {
 
       <div className="card">
         <div className="card-title">💰 Margin Details</div>
+        <SearchFilter
+          data={margins}
+          onFilter={setFilteredMargins}
+          searchFields={['hs4','key_products','strategy','credit_terms_note']}
+          placeholder="Search margin details..."
+        />
         <table>
           <thead>
             <tr>
@@ -141,7 +149,7 @@ export default function Margins() {
             </tr>
           </thead>
           <tbody>
-            {margins.map((m, idx) => (
+            {filteredMargins.map((m, idx) => (
               <tr key={idx}>
                 <td>{m.hs4}</td>
                 <td>${(m.china_source_usd || 0).toFixed(2)}</td>

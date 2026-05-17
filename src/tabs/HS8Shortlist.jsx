@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../supabaseClient';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, ScatterChart, Scatter, ZAxis } from 'recharts';
+import SearchFilter from '../components/SearchFilter';
 
 const card = {background:'rgba(17,24,39,0.8)', border:'1px solid rgba(148,163,184,0.1)', borderRadius:12, padding:20};
 const tierColors = {
@@ -28,10 +29,8 @@ const fmtINR = (n) => {
 export default function HS8Shortlist() {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [tierFilter, setTierFilter] = useState('ALL');
-  const [hs4Filter, setHs4Filter] = useState('ALL');
+  const [sfFiltered, setSfFiltered] = useState([]);
   const [sort, setSort] = useState({col:'shortlist_rank',dir:'asc'});
-  const [search, setSearch] = useState('');
   const [view, setView] = useState('table');
 
   useEffect(() => {
@@ -43,22 +42,16 @@ export default function HS8Shortlist() {
   }, []);
 
   const filtered = useMemo(() => {
-    let f = data;
-    if (tierFilter !== 'ALL') f = f.filter(r => r.shortlist_tier === tierFilter);
-    if (hs4Filter !== 'ALL') f = f.filter(r => r.hs4 === hs4Filter);
-    if (search) {
-      const s = search.toLowerCase();
-      f = f.filter(r => (r.hs8||'').includes(s) || (r.commodity||'').toLowerCase().includes(s) || (r.hs4||'').includes(s));
-    }
+    let f = [...sfFiltered];
     if (sort.col) {
-      f = [...f].sort((a,b) => {
+      f.sort((a,b) => {
         const av = a[sort.col], bv = b[sort.col];
         if (av == null) return 1; if (bv == null) return -1;
         return sort.dir === 'asc' ? (av > bv ? 1 : -1) : (av < bv ? 1 : -1);
       });
     }
     return f;
-  }, [data, tierFilter, hs4Filter, sort, search]);
+  }, [sfFiltered, sort]);
 
   const doSort = (col) => setSort(s => ({col, dir: s.col===col && s.dir==='asc' ? 'desc' : 'asc'}));
   const arrow = (col) => sort.col===col ? (sort.dir==='asc' ? ' ↑' : ' ↓') : '';
@@ -183,7 +176,7 @@ export default function HS8Shortlist() {
       {view === 'categories' && (
         <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:12,marginBottom:20}}>
           {hs4List.map(g => (
-            <div key={g.hs4} style={{...card,padding:16,cursor:'pointer',transition:'all 0.2s'}} onClick={()=>{ setHs4Filter(g.hs4); setView('table'); }}>
+            <div key={g.hs4} style={{...card,padding:16,cursor:'pointer',transition:'all 0.2s'}} onClick={()=>{ setView('table'); }}>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
                 <span style={{color:'#60a5fa',fontWeight:600,fontSize:15}}>HS4 {g.hs4}</span>
                 <span style={{color:'#34d399',fontSize:14,fontWeight:600}}>{g.count} products</span>
@@ -199,23 +192,7 @@ export default function HS8Shortlist() {
 
       {view === 'table' && (
         <>
-          {/* Filters */}
-          <div style={{display:'flex',gap:12,marginBottom:16,alignItems:'center',flexWrap:'wrap'}}>
-            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search HS8, HS4, or product..."
-              style={{padding:'8px 14px',borderRadius:8,border:'1px solid rgba(148,163,184,0.2)',background:'rgba(17,24,39,0.6)',color:'#e2e8f0',fontSize:13,width:260}}/>
-            <select value={tierFilter} onChange={e => setTierFilter(e.target.value)}
-              style={{padding:'8px 12px',borderRadius:8,border:'1px solid rgba(148,163,184,0.2)',background:'rgba(17,24,39,0.8)',color:'#e2e8f0',fontSize:13}}>
-              <option value="ALL">All Tiers</option>
-              <option value="TIER_1_PREMIUM">🥇 Tier 1 Premium</option>
-              <option value="TIER_2_HIGH">🥈 Tier 2 High</option>
-              <option value="TIER_3_SOLID">🥉 Tier 3 Solid</option>
-            </select>
-            <select value={hs4Filter} onChange={e => setHs4Filter(e.target.value)}
-              style={{padding:'8px 12px',borderRadius:8,border:'1px solid rgba(148,163,184,0.2)',background:'rgba(17,24,39,0.8)',color:'#e2e8f0',fontSize:13}}>
-              {uniqueHS4s.map(h => <option key={h} value={h}>{h === 'ALL' ? 'All HS4 Categories' : `HS4 ${h}`}</option>)}
-            </select>
-            <span style={{color:'#94a3b8',fontSize:13,marginLeft:'auto'}}>{filtered.length} of {data.length} products</span>
-          </div>
+          <SearchFilter data={data} onFilter={setSfFiltered} searchFields={['hs8','hs4','commodity']} filters={[{key:'shortlist_tier',label:'Tier'},{key:'hs4',label:'HS4'}]} placeholder="Search HS8, HS4, or product..." />
 
           {/* Table */}
           <div style={{...card,padding:0,overflow:'auto',maxHeight:'65vh'}}>

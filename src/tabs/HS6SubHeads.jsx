@@ -10,17 +10,13 @@ import {
   Cell,
 } from 'recharts';
 import { supabase } from '../supabaseClient';
+import SearchFilter from '../components/SearchFilter';
 
 export default function HS6SubHeads() {
   const [data, setData] = useState([]);
+  const [filtered, setFiltered] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-
-  // Filter states
-  const [searchText, setSearchText] = useState('');
-  const [selectedHs4, setSelectedHs4] = useState('');
-  const [selectedHs2, setSelectedHs2] = useState('');
-  const [minValue, setMinValue] = useState('');
 
   // Sort state
   const [sortConfig, setSortConfig] = useState({ key: 'total_val', direction: 'desc' });
@@ -71,25 +67,8 @@ export default function HS6SubHeads() {
     loadData();
   }, []);
 
-  // Filter data
-  const filteredData = data.filter((item) => {
-    const searchLower = searchText.toLowerCase();
-    const matchesSearch =
-      !searchText ||
-      item.hs6.toLowerCase().includes(searchLower) ||
-      item.hs4.toLowerCase().includes(searchLower) ||
-      item.hs2.toLowerCase().includes(searchLower) ||
-      (item.commodities && item.commodities.toLowerCase().includes(searchLower));
-
-    const matchesHs4 = !selectedHs4 || item.hs4 === selectedHs4;
-    const matchesHs2 = !selectedHs2 || item.hs2 === selectedHs2;
-    const matchesMinValue = !minValue || (item.total_val || 0) >= parseFloat(minValue);
-
-    return matchesSearch && matchesHs4 && matchesHs2 && matchesMinValue;
-  });
-
   // Sort data
-  const sortedData = [...filteredData].sort((a, b) => {
+  const sortedData = [...filtered].sort((a, b) => {
     const aVal = a[sortConfig.key];
     const bVal = b[sortConfig.key];
 
@@ -111,10 +90,6 @@ export default function HS6SubHeads() {
   const totalPages = Math.ceil(sortedData.length / itemsPerPage);
   const startIdx = (currentPage - 1) * itemsPerPage;
   const paginatedData = sortedData.slice(startIdx, startIdx + itemsPerPage);
-
-  // Get unique HS4 and HS2 values for dropdowns
-  const uniqueHs4 = [...new Set(data.map((item) => item.hs4))].sort();
-  const uniqueHs2 = [...new Set(data.map((item) => item.hs2))].sort();
 
   // Calculate KPIs
   const totalHs6 = data.length;
@@ -189,58 +164,16 @@ export default function HS6SubHeads() {
       </div>
 
       {/* Filters */}
-      <div className="filters card">
-        <input
-          type="text"
-          className="filter-input"
-          placeholder="Search HS6/HS4/HS2/Commodity..."
-          value={searchText}
-          onChange={(e) => {
-            setSearchText(e.target.value);
-            setCurrentPage(1);
-          }}
-        />
-        <select
-          className="filter-select"
-          value={selectedHs4}
-          onChange={(e) => {
-            setSelectedHs4(e.target.value);
-            setCurrentPage(1);
-          }}
-        >
-          <option value="">All HS4</option>
-          {uniqueHs4.map((hs4) => (
-            <option key={hs4} value={hs4}>
-              {hs4}
-            </option>
-          ))}
-        </select>
-        <select
-          className="filter-select"
-          value={selectedHs2}
-          onChange={(e) => {
-            setSelectedHs2(e.target.value);
-            setCurrentPage(1);
-          }}
-        >
-          <option value="">All HS2</option>
-          {uniqueHs2.map((hs2) => (
-            <option key={hs2} value={hs2}>
-              {hs2}
-            </option>
-          ))}
-        </select>
-        <input
-          type="number"
-          className="filter-input"
-          placeholder="Min Value ($M)..."
-          value={minValue}
-          onChange={(e) => {
-            setMinValue(e.target.value);
-            setCurrentPage(1);
-          }}
-        />
-      </div>
+      <SearchFilter
+        data={data}
+        onFilter={setFiltered}
+        searchFields={['hs6', 'hs4', 'hs2', 'commodities']}
+        filters={[
+          { key: 'hs4', label: 'HS4' },
+          { key: 'hs2', label: 'HS2' },
+        ]}
+        placeholder="Search by HS6/HS4/HS2 code or commodity..."
+      />
 
       {/* Top 20 Chart */}
       <div className="chart-container card">

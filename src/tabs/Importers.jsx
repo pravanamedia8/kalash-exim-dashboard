@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { supabase } from '../supabaseClient';
+import SearchFilter from '../components/SearchFilter';
 
 const COLORS = ['#4f8cff','#34d399','#fbbf24','#f87171','#a78bfa','#fb923c'];
 
@@ -37,9 +38,7 @@ export default function Importers() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [importers, setImporters] = useState([]);
-  const [search, setSearch] = useState('');
-  const [classFilter, setClassFilter] = useState('all');
-  const [cityFilter, setCityFilter] = useState('all');
+  const [filtered, setFiltered] = useState([]);
   const [verifiedFilter, setVerifiedFilter] = useState(false);
 
   useEffect(() => {
@@ -56,21 +55,10 @@ export default function Importers() {
       .finally(() => setLoading(false));
   }, []);
 
-  const classifications = useMemo(() => [...new Set(importers.map(i => i.classification).filter(Boolean))].sort(), [importers]);
-  const cities = useMemo(() => [...new Set(importers.map(i => i.city).filter(Boolean))].sort(), [importers]);
-
-  const filtered = useMemo(() => {
-    return importers.filter(i => {
-      const matchSearch = !search ||
-        (i.company_name||'').toLowerCase().includes(search.toLowerCase()) ||
-        (i.primary_hs4||'').includes(search) ||
-        (i.city||'').toLowerCase().includes(search.toLowerCase());
-      const matchClass = classFilter === 'all' || i.classification === classFilter;
-      const matchCity = cityFilter === 'all' || i.city === cityFilter;
-      const matchVerified = !verifiedFilter || i.volza_verified || i.zauba_verified;
-      return matchSearch && matchClass && matchCity && matchVerified;
-    });
-  }, [importers, search, classFilter, cityFilter, verifiedFilter]);
+  const postFiltered = useMemo(() => {
+    if (!verifiedFilter) return filtered;
+    return filtered.filter(i => i.volza_verified || i.zauba_verified);
+  }, [filtered, verifiedFilter]);
 
   const stats = useMemo(() => ({
     total: importers.length,
@@ -141,19 +129,10 @@ export default function Importers() {
       </div>
 
       <div className="card">
-        <div className="card-title">🏭 Importers ({filtered.length} of {importers.length})</div>
-        <div className="filters">
-          <input type="text" className="filter-input" placeholder="Search company, HS4, city..."
-            value={search} onChange={e => setSearch(e.target.value)} />
-          <select className="filter-select" value={classFilter} onChange={e => setClassFilter(e.target.value)}>
-            <option value="all">All Classifications</option>
-            {classifications.map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
-          <select className="filter-select" value={cityFilter} onChange={e => setCityFilter(e.target.value)}>
-            <option value="all">All Cities</option>
-            {cities.map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
-          <label style={{display:'flex',alignItems:'center',gap:'6px',cursor:'pointer',padding:'8px 12px',backgroundColor:'var(--bg3)',borderRadius:'4px',border:'1px solid var(--border)'}}>
+        <div className="card-title">🏭 Importers ({postFiltered.length} of {importers.length})</div>
+        <SearchFilter data={importers} onFilter={setFiltered} searchFields={['company_name','primary_hs4','city']} filters={[{key:'classification',label:'Classification'},{key:'city',label:'City'}]} placeholder="Search company, HS4, city..." />
+        <div style={{ marginBottom: '16px' }}>
+          <label style={{display:'flex',alignItems:'center',gap:'6px',cursor:'pointer',padding:'8px 12px',backgroundColor:'var(--bg3)',borderRadius:'4px',border:'1px solid var(--border)',width:'fit-content'}}>
             <input type="checkbox" checked={verifiedFilter} onChange={e => setVerifiedFilter(e.target.checked)} style={{cursor:'pointer'}} />
             <span style={{fontSize:'12px'}}>Verified Only</span>
           </label>
@@ -180,7 +159,7 @@ export default function Importers() {
             </tr>
           </thead>
           <tbody>
-            {filtered.length > 0 ? filtered.map((i,idx) => (
+            {postFiltered.length > 0 ? postFiltered.map((i,idx) => (
               <tr key={idx}>
                 <td style={{fontWeight:600,maxWidth:'150px'}}>{i.company_name}</td>
                 <td style={{fontFamily:'monospace',fontWeight:500}}>{i.primary_hs4}</td>
