@@ -136,7 +136,7 @@ export default function HS8MarginDetail() {
     setPage(0);
   };
 
-  if (loading) return <div style={{ padding: 40, color: '#94a3b8', textAlign: 'center' }}>Loading 556 HS8 codes with margin data...</div>;
+  if (loading) return <div style={{ padding: 40, color: '#94a3b8', textAlign: 'center' }}>Loading HS8 margin data...</div>;
 
   const thBase = {
     textAlign: 'left', padding: '8px 8px', color: '#94a3b8', fontSize: 10, borderBottom: '1px solid rgba(148,163,184,0.15)',
