@@ -241,7 +241,7 @@ export default function HS8MarginDetail() {
                 <div style={{ color: '#64748b', fontSize: 10, marginTop: 4 }}>
                   Duty: {r.total_duty_pct ? `${r.total_duty_pct.toFixed(1)}%` : '-'} (BCD {r.bcd_pct || '-'}% + IGST {r.igst_pct || '-'}%)
                 </div>
-                <div style={{ color: '#64748b', fontSize: 10 }}>Exchange: ₹{r.exchange_rate || 85}/USD</div>
+                <div style={{ color: '#64748b', fontSize: 10 }}>Exchange: ₹{r.exchange_rate || 95}/USD</div>
               </div>
               <div style={miniCard}>
                 <div style={label}>Margin Analysis</div>
