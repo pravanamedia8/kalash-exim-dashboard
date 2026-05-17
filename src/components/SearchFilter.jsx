@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 
 /*  Reusable search + filter bar for all dashboard tabs.
  *
@@ -48,9 +48,18 @@ const VERDICT_OPTIONS = ['All', 'EXCELLENT', 'GOOD', 'MODERATE', 'THIN', 'NEGATI
 export default function SearchFilter({ data = [], onFilter, searchFields, filters = [], placeholder, counts = true }) {
   const sf = searchFields || ['commodity', 'hs4', 'hs8', 'company_name', 'hs2', 'description'];
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [dropdowns, setDropdowns] = useState({});
+  const debounceRef = useRef(null);
 
-  // build options for each filter
+  // Debounce search input — 300ms delay prevents filtering on every keystroke
+  const handleSearch = useCallback((val) => {
+    setSearch(val);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => setDebouncedSearch(val), 300);
+  }, []);
+
+  // build options for each filter (only recompute when data/filters change)
   const filterMeta = useMemo(() => filters.map(f => {
     if (f.options) return { ...f, opts: f.options };
     if (f.key === '__verdict__' || f.label?.toLowerCase().includes('verdict')) {
@@ -60,11 +69,11 @@ export default function SearchFilter({ data = [], onFilter, searchFields, filter
     return { ...f, opts: ['All', ...vals] };
   }), [data, filters]);
 
-  // apply filters
+  // apply filters using debounced search value
   const filtered = useMemo(() => {
     let f = data;
-    if (search) {
-      const s = search.toLowerCase();
+    if (debouncedSearch) {
+      const s = debouncedSearch.toLowerCase();
       f = f.filter(r => sf.some(k => String(r[k] ?? '').toLowerCase().includes(s)));
     }
     filterMeta.forEach(fm => {
@@ -74,12 +83,14 @@ export default function SearchFilter({ data = [], onFilter, searchFields, filter
       }
     });
     return f;
-  }, [data, search, dropdowns, filterMeta, sf]);
+  }, [data, debouncedSearch, dropdowns, filterMeta, sf]);
 
-  // notify parent
-  useMemo(() => { if (onFilter) onFilter(filtered); }, [filtered]);
+  // notify parent via useEffect (proper side-effect, not useMemo)
+  const onFilterRef = useRef(onFilter);
+  onFilterRef.current = onFilter;
+  useEffect(() => { if (onFilterRef.current) onFilterRef.current(filtered); }, [filtered]);
 
-  const clear = () => { setSearch(''); setDropdowns({}); };
+  const clear = () => { setSearch(''); setDebouncedSearch(''); setDropdowns({}); };
   const hasActive = search || Object.values(dropdowns).some(v => v && v !== 'All');
 
   return (
@@ -87,7 +98,7 @@ export default function SearchFilter({ data = [], onFilter, searchFields, filter
       <input
         type="text"
         value={search}
-        onChange={e => setSearch(e.target.value)}
+        onChange={e => handleSearch(e.target.value)}
         placeholder={placeholder || `Search ${data.length} records...`}
         style={{ ...inputStyle, flex: '1 1 200px', minWidth: 180 }}
       />

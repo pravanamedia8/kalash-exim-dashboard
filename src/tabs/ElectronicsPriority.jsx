@@ -90,9 +90,9 @@ export default function ElectronicsPriority() {
   return (
     <div style={{display:'flex',flexDirection:'column',gap:20}}>
       <div style={{...card,background:'linear-gradient(135deg,rgba(79,140,255,0.15),rgba(96,165,250,0.05))'}}>
-        <h2 style={{margin:0,fontSize:20,color:'#e2e8f0'}}>⚡ Electronics Priority HS8 — Top 30 by CIF</h2>
+        <h2 style={{margin:0,fontSize:20,color:'#e2e8f0'}}>⚡ Electronics HS8 — Margin Research</h2>
         <p style={{margin:'8px 0 0',fontSize:13,color:'#94a3b8'}}>
-          Focused research queue: 30 highest-value electronics HS8 codes from Volza import data.
+          All electronics HS8 codes (Ch.84-91) with Volza import data. {total} codes, {researched} researched.
           Selling prices from IndiaMART, TradeIndia, Amazon, Moglix, IndustryBuying.
           Margin = (Sell Price - Median Landed Cost) / Sell Price × 100.
         </p>

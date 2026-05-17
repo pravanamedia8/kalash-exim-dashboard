@@ -42,7 +42,7 @@ export default function App() {
         { id: 'winners', label: '🌟 Winners' },
         { id: 'selling', label: '🏷️ Selling Prices' },
         { id: 'hs8detail', label: '🔬 HS8 Deep Dive' },
-        { id: 'elecpriority', label: '⚡ Electronics Top 30' },
+        { id: 'elecpriority', label: '⚡ Electronics HS8' },
         { id: 'shortlist', label: '🏆 Shortlist' },
         { id: 'allhs8', label: '📦 All HS8' },
         { id: 'volzadetail', label: '🔍 Volza Detail' },
