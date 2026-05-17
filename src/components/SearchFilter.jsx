@@ -52,6 +52,13 @@ export default function SearchFilter({ data = [], onFilter, searchFields, filter
   const [dropdowns, setDropdowns] = useState({});
   const debounceRef = useRef(null);
 
+  // Stabilize data reference — only update when content actually changes
+  const stableDataRef = useRef(data);
+  if (stableDataRef.current !== data && (stableDataRef.current.length !== data.length || stableDataRef.current[0] !== data[0])) {
+    stableDataRef.current = data;
+  }
+  const stableData = stableDataRef.current;
+
   // Debounce search input — 300ms delay prevents filtering on every keystroke
   const handleSearch = useCallback((val) => {
     setSearch(val);
@@ -65,13 +72,13 @@ export default function SearchFilter({ data = [], onFilter, searchFields, filter
     if (f.key === '__verdict__' || f.label?.toLowerCase().includes('verdict')) {
       return { ...f, key: f.key === '__verdict__' ? 'margin_verdict' : f.key, opts: VERDICT_OPTIONS };
     }
-    const vals = [...new Set(data.map(r => r[f.key]).filter(Boolean))].sort();
+    const vals = [...new Set(stableData.map(r => r[f.key]).filter(Boolean))].sort();
     return { ...f, opts: ['All', ...vals] };
-  }), [data, filters]);
+  }), [stableData, filters]);
 
   // apply filters using debounced search value
   const filtered = useMemo(() => {
-    let f = data;
+    let f = stableData;
     if (debouncedSearch) {
       const s = debouncedSearch.toLowerCase();
       f = f.filter(r => sf.some(k => String(r[k] ?? '').toLowerCase().includes(s)));
@@ -83,12 +90,21 @@ export default function SearchFilter({ data = [], onFilter, searchFields, filter
       }
     });
     return f;
-  }, [data, debouncedSearch, dropdowns, filterMeta, sf]);
+  }, [stableData, debouncedSearch, dropdowns, filterMeta, sf]);
 
-  // notify parent via useEffect (proper side-effect, not useMemo)
+  // notify parent via useEffect — with shallow equality guard to prevent infinite loops
   const onFilterRef = useRef(onFilter);
   onFilterRef.current = onFilter;
-  useEffect(() => { if (onFilterRef.current) onFilterRef.current(filtered); }, [filtered]);
+  const prevFilteredRef = useRef(null);
+  useEffect(() => {
+    // Skip if filtered result hasn't actually changed (same length + same first item)
+    const prev = prevFilteredRef.current;
+    if (prev && prev.length === filtered.length && prev[0] === filtered[0] && prev[prev.length - 1] === filtered[filtered.length - 1]) {
+      return;
+    }
+    prevFilteredRef.current = filtered;
+    if (onFilterRef.current) onFilterRef.current(filtered);
+  }, [filtered]);
 
   const clear = () => { setSearch(''); setDebouncedSearch(''); setDropdowns({}); };
   const hasActive = search || Object.values(dropdowns).some(v => v && v !== 'All');
@@ -99,7 +115,7 @@ export default function SearchFilter({ data = [], onFilter, searchFields, filter
         type="text"
         value={search}
         onChange={e => handleSearch(e.target.value)}
-        placeholder={placeholder || `Search ${data.length} records...`}
+        placeholder={placeholder || `Search ${stableData.length} records...`}
         style={{ ...inputStyle, flex: '1 1 200px', minWidth: 180 }}
       />
       {filterMeta.map(fm => (
@@ -114,7 +130,7 @@ export default function SearchFilter({ data = [], onFilter, searchFields, filter
       ))}
       {counts && (
         <span style={{ color: '#94a3b8', fontSize: 11, whiteSpace: 'nowrap' }}>
-          {filtered.length}{filtered.length !== data.length ? ` / ${data.length}` : ''}
+          {filtered.length}{filtered.length !== stableData.length ? ` / ${stableData.length}` : ''}
         </span>
       )}
       {hasActive && (
