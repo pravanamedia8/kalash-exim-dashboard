@@ -46,18 +46,38 @@ const barStyle = {
 const VERDICT_OPTIONS = ['All', 'EXCELLENT', 'GOOD', 'MODERATE', 'THIN', 'NEGATIVE', 'NO_DATA'];
 
 export default function SearchFilter({ data = [], onFilter, searchFields, filters = [], placeholder, counts = true }) {
-  const sf = searchFields || ['commodity', 'hs4', 'hs8', 'company_name', 'hs2', 'description'];
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [dropdowns, setDropdowns] = useState({});
   const debounceRef = useRef(null);
 
-  // Stabilize data reference — only update when content actually changes
+  // Stabilize ALL prop references to prevent infinite render loops.
+  // Parent components pass inline arrays/objects that create new references each render.
   const stableDataRef = useRef(data);
   if (stableDataRef.current !== data && (stableDataRef.current.length !== data.length || stableDataRef.current[0] !== data[0])) {
     stableDataRef.current = data;
   }
   const stableData = stableDataRef.current;
+
+  // Stabilize searchFields prop
+  const sfJson = JSON.stringify(searchFields);
+  const sfRef = useRef(searchFields || ['commodity', 'hs4', 'hs8', 'company_name', 'hs2', 'description']);
+  const prevSfJson = useRef(sfJson);
+  if (sfJson !== prevSfJson.current) {
+    sfRef.current = searchFields || ['commodity', 'hs4', 'hs8', 'company_name', 'hs2', 'description'];
+    prevSfJson.current = sfJson;
+  }
+  const sf = sfRef.current;
+
+  // Stabilize filters prop
+  const filtersJson = JSON.stringify(filters);
+  const filtersRef = useRef(filters);
+  const prevFiltersJson = useRef(filtersJson);
+  if (filtersJson !== prevFiltersJson.current) {
+    filtersRef.current = filters;
+    prevFiltersJson.current = filtersJson;
+  }
+  const stableFilters = filtersRef.current;
 
   // Debounce search input — 300ms delay prevents filtering on every keystroke
   const handleSearch = useCallback((val) => {
@@ -67,14 +87,14 @@ export default function SearchFilter({ data = [], onFilter, searchFields, filter
   }, []);
 
   // build options for each filter (only recompute when data/filters change)
-  const filterMeta = useMemo(() => filters.map(f => {
+  const filterMeta = useMemo(() => stableFilters.map(f => {
     if (f.options) return { ...f, opts: f.options };
     if (f.key === '__verdict__' || f.label?.toLowerCase().includes('verdict')) {
       return { ...f, key: f.key === '__verdict__' ? 'margin_verdict' : f.key, opts: VERDICT_OPTIONS };
     }
     const vals = [...new Set(stableData.map(r => r[f.key]).filter(Boolean))].sort();
     return { ...f, opts: ['All', ...vals] };
-  }), [stableData, filters]);
+  }), [stableData, stableFilters]);
 
   // apply filters using debounced search value
   const filtered = useMemo(() => {

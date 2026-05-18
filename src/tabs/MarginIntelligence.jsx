@@ -22,7 +22,7 @@ export default function MarginIntelligence() {
   data.forEach(r=>{ if(r.margin_verdict) verdicts[r.margin_verdict]=(verdicts[r.margin_verdict]||0)+1; });
   const verdictData = ['EXCELLENT','GOOD','MODERATE','THIN','NEGATIVE'].map(v=>({name:v,count:verdicts[v]||0}));
 
-  const researched = data.filter(r=>r.research_status==='completed').length;
+  const researched = data.filter(r=>r.selling_price_research_status==='completed').length;
   const winners = data.filter(r=>r.margin_verdict==='EXCELLENT'||r.margin_verdict==='GOOD').length;
   const avgMargin = data.filter(r=>r.real_margin_pct).length ? Math.round(data.filter(r=>r.real_margin_pct).reduce((a,r)=>a+r.real_margin_pct,0)/data.filter(r=>r.real_margin_pct).length) : 0;
   const totalCIF = data.reduce((a,r)=>a+(r.total_cif_usd||0),0);
