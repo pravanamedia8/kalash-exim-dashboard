@@ -1,31 +1,74 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../supabaseClient';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from 'recharts';
-import SearchFilter from '../components/SearchFilter';
 
 const card = {background:'rgba(17,24,39,0.8)',border:'1px solid rgba(148,163,184,0.1)',borderRadius:12,padding:20};
 const MV = {EXCELLENT:'#34d399',GOOD:'#60a5fa',MODERATE:'#fbbf24',THIN:'#f59e0b',NEGATIVE:'#f87171'};
-const STATUS_COLORS = {done:'#34d399',in_progress:'#fbbf24',pending:'#94a3b8',failed:'#f87171'};
+const dataCols = 'hs8,hs4,commodity,dominant_unit,median_unit_rate_usd,median_landed_cost_inr,price_consensus_inr,real_margin_pct,margin_verdict,source_count,unit_matched,total_cif_usd,rate_dispersion,selling_price_research_status,sources_checked,indiamart_sell_price_inr,tradeindia_sell_price_inr,amazon_sell_price_inr,moglix_sell_price_inr,industbuy_sell_price_inr,unique_buyers';
 
 export default function SellingPriceResearch() {
   const [data, setData] = useState([]);
   const [sources, setSources] = useState([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState('overview');
-  const [sfFiltered, setSfFiltered] = useState([]);
   const [sort, setSort] = useState({col:'total_cif_usd',dir:'desc'});
   const [expanded, setExpanded] = useState(null);
+  const [search, setSearch] = useState('');
+  const [verdictFilter, setVerdictFilter] = useState('All');
+  const [statusFilter, setStatusFilter] = useState('All');
 
   useEffect(() => {
     Promise.all([
-      supabase.from('hs8_margin_analysis').select('*').not('median_unit_rate_usd','is',null).order('total_cif_usd',{ascending:false}),
-      supabase.from('hs8_price_sources').select('*').order('researched_at',{ascending:false}).limit(500)
+      supabase.from('hs8_margin_analysis').select(dataCols).not('median_unit_rate_usd','is',null).order('total_cif_usd',{ascending:false}),
+      supabase.from('hs8_price_sources').select('id,hs8,source_name,keyword_used,price_low_inr,price_high_inr,price_typical_inr,price_unit,seller_count,confidence,price_tier_match,researched_at').order('researched_at',{ascending:false}).limit(500)
     ]).then(([{data:d1},{data:d2}]) => {
       setData(d1||[]);
       setSources(d2||[]);
       setLoading(false);
     });
   }, []);
+
+  // Inline search + filter (replaces SearchFilter to prevent freeze)
+  const filtered = useMemo(() => {
+    let f = data;
+    if (search) {
+      const s = search.toLowerCase();
+      f = f.filter(r => (r.commodity||'').toLowerCase().includes(s) || (r.hs8||'').includes(s) || (r.hs4||'').includes(s));
+    }
+    if (verdictFilter !== 'All') f = f.filter(r => r.margin_verdict === verdictFilter);
+    if (statusFilter !== 'All') f = f.filter(r => (r.selling_price_research_status||'pending') === statusFilter);
+    return f;
+  }, [data, search, verdictFilter, statusFilter]);
+
+  const sorted = useMemo(() => {
+    const arr = [...filtered];
+    arr.sort((a,b) => {
+      let av = a[sort.col] ?? -Infinity, bv = b[sort.col] ?? -Infinity;
+      return sort.dir === 'desc' ? (bv > av ? 1 : bv < av ? -1 : 0) : (av > bv ? 1 : av < bv ? -1 : 0);
+    });
+    return arr;
+  }, [filtered, sort]);
+
+  // Dynamic source discovery from sources_checked field
+  const allSourceNames = useMemo(() => {
+    const srcSet = new Set();
+    data.forEach(r => {
+      if (r.sources_checked) r.sources_checked.split(',').forEach(s => { const t = s.trim(); if (t) srcSet.add(t); });
+    });
+    // Also add from hs8_price_sources table
+    sources.forEach(s => { if (s.source_name) srcSet.add(s.source_name.trim()); });
+    return Array.from(srcSet).sort();
+  }, [data, sources]);
+
+  // Count codes per source (from sources_checked field — comprehensive)
+  const sourceCodeCounts = useMemo(() => {
+    const counts = {};
+    allSourceNames.forEach(s => { counts[s] = 0; });
+    data.forEach(r => {
+      if (r.sources_checked) r.sources_checked.split(',').forEach(s => { const t = s.trim(); if (t && counts[t] !== undefined) counts[t]++; });
+    });
+    return counts;
+  }, [data, allSourceNames]);
 
   if (loading) return <div style={{padding:40,color:'#94a3b8'}}>Loading selling price research...</div>;
 
@@ -76,17 +119,8 @@ export default function SellingPriceResearch() {
   });
   const hs4Progress = Object.values(hs4Map).sort((a,b)=>b.cif-a.cif);
 
-  // Source coverage
-  const srcMap = {};
-  sources.forEach(s => { srcMap[s.source_name] = (srcMap[s.source_name]||0)+1; });
-  const sourceData = Object.entries(srcMap).map(([name,count])=>({name,count})).sort((a,b)=>b.count-a.count);
-
-  // Filtered table data
-  let filtered = [...sfFiltered];
-  filtered.sort((a,b)=>{
-    let av=a[sort.col]??-Infinity, bv=b[sort.col]??-Infinity;
-    return sort.dir==='desc' ? (bv>av?1:bv<av?-1:0) : (av>bv?1:av<bv?-1:0);
-  });
+  // Source coverage chart data (from sources_checked — shows ALL sources including RS Components, Element14)
+  const sourceData = allSourceNames.map(name => ({name, count: sourceCodeCounts[name]||0})).filter(s=>s.count>0).sort((a,b)=>b.count-a.count);
 
   const toggleSort = col => setSort(s=>({col,dir:s.col===col&&s.dir==='desc'?'asc':'desc'}));
   const th = {textAlign:'left',padding:'8px 6px',color:'#94a3b8',fontSize:10,borderBottom:'1px solid rgba(148,163,184,0.1)',cursor:'pointer',position:'sticky',top:0,background:'rgba(17,24,39,0.95)',textTransform:'uppercase',whiteSpace:'nowrap'};
@@ -204,7 +238,20 @@ export default function SellingPriceResearch() {
 
       {view==='table' && (
         <div style={card}>
-          <SearchFilter data={data} onFilter={setSfFiltered} searchFields={['hs8','hs4','commodity']} filters={[{key:'margin_verdict',label:'Verdict'},{key:'selling_price_research_status',label:'Status'}]} placeholder="Search HS8, HS4, commodity..." counts />
+          {/* Inline search + filters (no SearchFilter component — prevents freeze) */}
+          <div style={{display:'flex',gap:10,alignItems:'center',padding:'10px 0',marginBottom:12,flexWrap:'wrap'}}>
+            <input type="text" value={search} onChange={e=>setSearch(e.target.value)} placeholder={`Search ${data.length} HS8 codes...`} style={{background:'rgba(17,24,39,0.7)',border:'1px solid rgba(148,163,184,0.15)',color:'#e2e8f0',borderRadius:6,padding:'6px 12px',fontSize:12,outline:'none',flex:'1 1 200px',minWidth:180}} />
+            <select value={verdictFilter} onChange={e=>setVerdictFilter(e.target.value)} style={{background:'rgba(17,24,39,0.7)',border:'1px solid rgba(148,163,184,0.15)',color:'#e2e8f0',borderRadius:6,padding:'6px 12px',fontSize:12,outline:'none',cursor:'pointer'}}>
+              <option value="All">All Verdicts</option>
+              {['EXCELLENT','GOOD','MODERATE','THIN','NEGATIVE'].map(v=><option key={v} value={v}>{v}</option>)}
+            </select>
+            <select value={statusFilter} onChange={e=>setStatusFilter(e.target.value)} style={{background:'rgba(17,24,39,0.7)',border:'1px solid rgba(148,163,184,0.15)',color:'#e2e8f0',borderRadius:6,padding:'6px 12px',fontSize:12,outline:'none',cursor:'pointer'}}>
+              <option value="All">All Status</option>
+              {['done','completed','in_progress','pending'].map(v=><option key={v} value={v}>{v}</option>)}
+            </select>
+            <span style={{color:'#94a3b8',fontSize:11,whiteSpace:'nowrap'}}>{filtered.length}{filtered.length!==data.length?` / ${data.length}`:''}</span>
+            {(search||verdictFilter!=='All'||statusFilter!=='All') && <button onClick={()=>{setSearch('');setVerdictFilter('All');setStatusFilter('All');}} style={{background:'rgba(17,24,39,0.7)',border:'1px solid rgba(248,113,113,0.3)',color:'#f87171',borderRadius:6,padding:'5px 10px',fontSize:11,cursor:'pointer'}}>Clear</button>}
+          </div>
 
           <div style={{maxHeight:'65vh',overflowY:'auto',overflowX:'auto'}}>
             <table style={{width:'100%',borderCollapse:'collapse',minWidth:1200}}>
@@ -233,7 +280,7 @@ export default function SellingPriceResearch() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.slice(0,200).map(r => (
+                {sorted.slice(0,200).map(r => (
                   <tr key={r.hs8} onClick={()=>setExpanded(expanded===r.hs8?null:r.hs8)} style={{cursor:'pointer',background:expanded===r.hs8?'rgba(79,140,255,0.05)':'transparent'}}>
                     <td style={{...td,color:'#60a5fa',fontWeight:600,fontFamily:'monospace'}}>{r.hs8}</td>
                     <td style={{...td,color:'#94a3b8',fontFamily:'monospace'}}>{r.hs4}</td>
@@ -297,19 +344,16 @@ export default function SellingPriceResearch() {
       {view==='sources' && (
         <div style={card}>
           <h3 style={{color:'#e2e8f0',fontSize:14,margin:'0 0 16px'}}>🔗 Source Coverage Matrix</h3>
-          <p style={{color:'#94a3b8',fontSize:12,marginBottom:16}}>Each HS8 code is researched across 5 Indian marketplaces to triangulate real selling prices</p>
-          <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:12,marginBottom:20}}>
-            {['IndiaMART','TradeIndia','Amazon.in','Moglix','IndustryBuying'].map(src => {
-              const key = src.toLowerCase().replace(/[^a-z]/g,'');
-              const srcCount = sources.filter(s=>s.source_name.toLowerCase().replace(/[^a-z]/g,'')===key).length;
-              return (
-                <div key={src} style={{...card,padding:14,textAlign:'center'}}>
-                  <div style={{color:'#60a5fa',fontSize:20,fontWeight:700}}>{srcCount}</div>
-                  <div style={{color:'#94a3b8',fontSize:11}}>{src}</div>
-                  <div style={{color:'#475569',fontSize:10}}>visits</div>
-                </div>
-              );
-            })}
+          <p style={{color:'#94a3b8',fontSize:12,marginBottom:16}}>Each HS8 code is researched across multiple Indian marketplaces to triangulate real selling prices — {allSourceNames.length} sources detected</p>
+          <div style={{display:'grid',gridTemplateColumns:`repeat(auto-fit,minmax(130px,1fr))`,gap:12,marginBottom:20}}>
+            {sourceData.map(src => (
+              <div key={src.name} style={{...card,padding:14,textAlign:'center'}}>
+                <div style={{color:src.count>50?'#34d399':src.count>10?'#60a5fa':'#fbbf24',fontSize:20,fontWeight:700}}>{src.count}</div>
+                <div style={{color:'#e2e8f0',fontSize:11,fontWeight:500}}>{src.name}</div>
+                <div style={{color:'#475569',fontSize:10}}>HS8 codes</div>
+              </div>
+            ))}
+            {!sourceData.length && <div style={{color:'#475569',padding:20,gridColumn:'1/-1',textAlign:'center'}}>No source data yet</div>}
           </div>
 
           <h4 style={{color:'#e2e8f0',fontSize:13,margin:'16px 0 10px'}}>Recent Source Visits</h4>
