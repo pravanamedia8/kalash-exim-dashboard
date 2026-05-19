@@ -13,6 +13,7 @@ import SupplyChainView from './tabs/SupplyChainView';
 import SellingPriceResearch from './tabs/SellingPriceResearch';
 import HS8MarginDetail from './tabs/HS8MarginDetail';
 import ElectronicsPriority from './tabs/ElectronicsPriority';
+import ComponentResearch from './tabs/ComponentResearch';
 import HS8Shortlist from './tabs/HS8Shortlist';
 import HS8AllProducts from './tabs/HS8AllProducts';
 import HS8VolzaDetail from './tabs/HS8VolzaDetail';
@@ -33,6 +34,7 @@ export default function App() {
       tabs: [
         { id: 'pipeline', label: '🔬 Pipeline' },
         { id: 'scoring', label: '🏆 Scoring' },
+        { id: 'components', label: '🧩 Components' },
       ],
     },
     {
@@ -76,6 +78,7 @@ export default function App() {
       case 'tracker': return <ProjectTracker />;
       case 'pipeline': return <ResearchPipeline />;
       case 'scoring': return <ScoringDashboard />;
+      case 'components': return <ComponentResearch />;
       case 'margins': return <MarginIntelligence />;
       case 'winners': return <WinnersDashboard />;
       case 'selling': return <SellingPriceResearch />;
