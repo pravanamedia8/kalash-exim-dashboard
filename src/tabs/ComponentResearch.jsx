@@ -60,6 +60,11 @@ function usd(value) {
   return `$${fmt1.format(Number(value))}`;
 }
 
+function usdMn(value) {
+  if (value === null || value === undefined || value === '') return '-';
+  return `$${fmt1.format(Number(value))}M`;
+}
+
 function pct(value) {
   if (value === null || value === undefined || value === '') return '-';
   return `${fmt1.format(Number(value))}%`;
@@ -91,6 +96,12 @@ function landedCost(row) {
 
 function margin(row) {
   return n(row.gross_margin_pct) || n(row.real_margin_pct);
+}
+
+function ratio(part, total) {
+  const denominator = n(total);
+  if (!denominator) return 0;
+  return Math.round((n(part) / denominator) * 100);
 }
 
 function sortRows(rows, sort) {
@@ -139,19 +150,42 @@ function DetailItem({ label, value }) {
 }
 
 function useResearchData() {
-  const [state, setState] = useState({ loading: true, error: '', products: [], hs8: [], refs: [], batch: [] });
+  const [state, setState] = useState({
+    loading: true,
+    error: '',
+    products: [],
+    hs8: [],
+    refs: [],
+    batch: [],
+    hs4Coverage: [],
+    hs8Coverage: [],
+    researchGaps: []
+  });
 
   async function load() {
     setState((old) => ({ ...old, loading: true, error: '' }));
-    const [products, hs8, refs, batch] = await Promise.all([
+    const [products, hs8, refs, batch, hs4Coverage, hs8Coverage, researchGaps] = await Promise.all([
       supabase.from('component_dashboard_products').select('*').order('priority_rank', { ascending: true }),
       supabase.from('component_dashboard_hs8').select('*').order('live_score', { ascending: false }).limit(1000),
       supabase.from('component_market_price_refs').select('*').order('checked_at', { ascending: false }).limit(500),
-      supabase.from('component_next_research_batch').select('*').order('research_rank', { ascending: true }).limit(75)
+      supabase.from('component_next_research_batch').select('*').order('research_rank', { ascending: true }).limit(100),
+      supabase.from('component_dashboard_hs4_coverage').select('*').order('research_order', { ascending: true }),
+      supabase.from('component_dashboard_hs8_coverage').select('*').order('research_order', { ascending: true }).limit(1500),
+      supabase.from('component_dashboard_research_gaps').select('*').order('val_2024_25', { ascending: false }).limit(500)
     ]);
-    const error = products.error || hs8.error || refs.error || batch.error;
+    const error = products.error || hs8.error || refs.error || batch.error || hs4Coverage.error || hs8Coverage.error || researchGaps.error;
     if (error) {
-      setState({ loading: false, error: error.message, products: [], hs8: [], refs: [], batch: [] });
+      setState({
+        loading: false,
+        error: error.message,
+        products: [],
+        hs8: [],
+        refs: [],
+        batch: [],
+        hs4Coverage: [],
+        hs8Coverage: [],
+        researchGaps: []
+      });
       return;
     }
     setState({
@@ -160,7 +194,10 @@ function useResearchData() {
       products: products.data || [],
       hs8: hs8.data || [],
       refs: refs.data || [],
-      batch: batch.data || []
+      batch: batch.data || [],
+      hs4Coverage: hs4Coverage.data || [],
+      hs8Coverage: hs8Coverage.data || [],
+      researchGaps: researchGaps.data || []
     });
   }
 
@@ -420,6 +457,184 @@ function Hs8Detail({ row }) {
   );
 }
 
+function CoverageBar({ label, value, total, color }) {
+  const percent = ratio(value, total);
+  return (
+    <div style={{ display: 'grid', gap: 6, marginTop: 12 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, color: colors.muted, fontSize: 12 }}>
+        <span>{label}</span>
+        <strong style={{ color: colors.text }}>{fmt0.format(n(value))}/{fmt0.format(n(total))}</strong>
+      </div>
+      <div style={{ height: 9, borderRadius: 999, background: '#0b1210', border: `1px solid ${colors.line}`, overflow: 'hidden' }}>
+        <span style={{ display: 'block', height: '100%', minWidth: 2, width: `${percent}%`, background: color }} />
+      </div>
+    </div>
+  );
+}
+
+function CoverageDashboard({ hs4Coverage, researchGaps }) {
+  const [filters, setFilters] = useState({ search: '', category: 'ALL', status: 'ALL', sort: 'gaps_desc' });
+  const categories = useMemo(() => Array.from(new Set(hs4Coverage.map((row) => row.category_pod).filter(Boolean))).sort(), [hs4Coverage]);
+  const statuses = useMemo(() => Array.from(new Set(researchGaps.map((row) => row.coverage_status).filter(Boolean))).sort(), [researchGaps]);
+
+  const filteredHs4 = useMemo(() => {
+    const query = filters.search.trim().toLowerCase();
+    const rows = hs4Coverage.filter((row) => {
+      if (filters.category !== 'ALL' && row.category_pod !== filters.category) return false;
+      if (!query) return true;
+      return [row.hs4, row.category_label, row.category_pod, row.core_scope, row.new_importer_fit, row.top_hs8_by_import_value].join(' ').toLowerCase().includes(query);
+    });
+    const copy = [...rows];
+    if (filters.sort === 'import_desc') return copy.sort((a, b) => n(b.total_import_value_2024_25) - n(a.total_import_value_2024_25));
+    if (filters.sort === 'coverage_asc') return copy.sort((a, b) => ratio(a.hs8_in_queue, a.total_hs8_codes) - ratio(b.hs8_in_queue, b.total_hs8_codes));
+    if (filters.sort === 'price_asc') return copy.sort((a, b) => ratio(a.hs8_price_screened, a.total_hs8_codes) - ratio(b.hs8_price_screened, b.total_hs8_codes));
+    return copy.sort((a, b) => n(b.hs8_to_promote) - n(a.hs8_to_promote));
+  }, [hs4Coverage, filters]);
+
+  const filteredGaps = useMemo(() => {
+    const query = filters.search.trim().toLowerCase();
+    return researchGaps
+      .filter((row) => {
+        if (filters.category !== 'ALL' && row.category_pod !== filters.category) return false;
+        if (filters.status !== 'ALL' && row.coverage_status !== filters.status) return false;
+        if (!query) return true;
+        return [row.hs8, row.hs4, row.commodity, row.category_label, row.research_lane, row.next_action].join(' ').toLowerCase().includes(query);
+      })
+      .sort((a, b) => n(b.val_2024_25) - n(a.val_2024_25));
+  }, [researchGaps, filters]);
+
+  const totals = useMemo(() => hs4Coverage.reduce((acc, row) => {
+    acc.total += n(row.total_hs8_codes);
+    acc.inQueue += n(row.hs8_in_queue);
+    acc.priceScreened += n(row.hs8_price_screened);
+    acc.validated += n(row.hs8_with_product_validation);
+    acc.toPromote += n(row.hs8_to_promote);
+    acc.importValue += n(row.total_import_value_2024_25);
+    return acc;
+  }, { total: 0, inQueue: 0, priceScreened: 0, validated: 0, toPromote: 0, importValue: 0 }), [hs4Coverage]);
+
+  return (
+    <div style={{ display: 'grid', gap: 14 }}>
+      <section style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.4fr) minmax(320px,.8fr)', gap: 14 }}>
+        <div style={{ ...card, padding: 18 }}>
+          <h2 style={{ marginTop: 0 }}>Coverage Map</h2>
+          <p style={{ color: colors.muted }}>{fmt0.format(totals.total)} HS8 codes across {fmt0.format(hs4Coverage.length)} electronics and electronics-adjacent HS4 groups.</p>
+          <CoverageBar label="In research queue" value={totals.inQueue} total={totals.total} color={colors.cyan} />
+          <CoverageBar label="Price screened" value={totals.priceScreened} total={totals.total} color={colors.green} />
+          <CoverageBar label="Product validated" value={totals.validated} total={totals.total} color={colors.amber} />
+        </div>
+        <div style={{ ...card, padding: 18 }}>
+          <h2 style={{ marginTop: 0 }}>Open Gaps</h2>
+          <p style={{ color: colors.muted }}>{fmt0.format(totals.toPromote)} HS8 codes still need promotion into the queue or a proper landed-cost row.</p>
+          <div style={{ display: 'grid', gap: 8, marginTop: 14 }}>
+            <PlanLine label="Total import value" value={usdMn(totals.importValue)} />
+            <PlanLine label="Rows in gap view" value={fmt0.format(researchGaps.length)} />
+            <PlanLine label="Filtered gaps" value={fmt0.format(filteredGaps.length)} />
+          </div>
+        </div>
+      </section>
+
+      <section style={{ ...card, display: 'grid', gridTemplateColumns: 'minmax(260px,1fr) 230px 210px 220px 84px', gap: 10, padding: 12, alignItems: 'center' }}>
+        <input style={field} value={filters.search} onChange={(e) => setFilters({ ...filters, search: e.target.value })} placeholder="Search HS4, HS8, category, commodity..." />
+        <select style={field} value={filters.category} onChange={(e) => setFilters({ ...filters, category: e.target.value })}>
+          <option value="ALL">All categories</option>
+          {categories.map((category) => <option key={category} value={category}>{category}</option>)}
+        </select>
+        <select style={field} value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })}>
+          <option value="ALL">All gap status</option>
+          {statuses.map((status) => <option key={status} value={status}>{status}</option>)}
+        </select>
+        <select style={field} value={filters.sort} onChange={(e) => setFilters({ ...filters, sort: e.target.value })}>
+          <option value="gaps_desc">Gaps high to low</option>
+          <option value="import_desc">Import value high to low</option>
+          <option value="coverage_asc">Queue coverage low to high</option>
+          <option value="price_asc">Price coverage low to high</option>
+        </select>
+        <button style={button} type="button" onClick={() => setFilters({ search: '', category: 'ALL', status: 'ALL', sort: 'gaps_desc' })}>Reset</button>
+      </section>
+
+      <main style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 420px', gap: 14, alignItems: 'start' }}>
+        <section>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, color: colors.muted }}>
+            <h2 style={{ color: colors.text, fontSize: 16, margin: 0 }}>HS4 Category Coverage</h2>
+            <span>{filteredHs4.length} categories</span>
+          </div>
+          <div style={{ ...card, overflow: 'auto', maxHeight: 460 }}>
+            <table style={{ width: '100%', minWidth: 1180, borderCollapse: 'collapse', fontSize: 12 }}>
+              <thead>
+                <tr>
+                  {['HS4', 'Category', 'Import value', 'Queue', 'Price', 'Validated', 'To promote', 'Fit'].map((head) => <th key={head} style={th}>{head}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {filteredHs4.map((row) => (
+                  <tr key={row.hs4} style={{ borderBottom: `1px solid ${colors.line}` }}>
+                    <td style={tdStrong}><strong>{row.hs4}</strong><small>{row.category_pod}</small></td>
+                    <td style={tdStrong}><strong>{row.category_label}</strong><small>{row.core_scope}</small></td>
+                    <td style={td}>{usdMn(row.total_import_value_2024_25)}</td>
+                    <td style={tdStrong}><strong>{ratio(row.hs8_in_queue, row.total_hs8_codes)}%</strong><small>{fmt0.format(n(row.hs8_in_queue))}/{fmt0.format(n(row.total_hs8_codes))} HS8</small></td>
+                    <td style={tdStrong}><strong>{ratio(row.hs8_price_screened, row.total_hs8_codes)}%</strong><small>{fmt0.format(n(row.hs8_price_screened))} screened</small></td>
+                    <td style={td}>{fmt0.format(n(row.hs8_with_product_validation))}</td>
+                    <td style={td}><Badge>{n(row.hs8_to_promote) ? `${fmt0.format(n(row.hs8_to_promote))} needs` : 'complete'}</Badge></td>
+                    <td style={td}><Badge>{row.new_importer_fit}</Badge></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <aside style={{ ...card, padding: 16, position: 'sticky', top: 12 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start', marginBottom: 12 }}>
+            <span style={{ color: colors.muted, fontSize: 12 }}>Next Promotion Queue</span>
+            <Badge>{`${Math.min(filteredGaps.length, 12)} shown`}</Badge>
+          </div>
+          <h2 style={{ margin: 0, fontSize: 19 }}>Missing HS8 To Pull Next</h2>
+          <p style={{ color: colors.muted, fontSize: 13, lineHeight: 1.45 }}>These are the remaining category gaps to promote before exact marketplace margin checks.</p>
+          <div style={{ display: 'grid', gap: 8, marginTop: 14 }}>
+            {filteredGaps.slice(0, 12).map((row) => (
+              <div key={row.hs8} style={{ background: colors.panel2, border: `1px solid ${colors.line}`, borderRadius: 6, padding: 10 }}>
+                <strong>{row.hs8} | {row.hs4}</strong>
+                <span style={{ display: 'block', color: colors.cyan, fontSize: 12, marginTop: 3 }}>{row.category_pod}</span>
+                <small style={{ display: 'block', color: colors.muted, fontSize: 12, lineHeight: 1.35, marginTop: 5 }}>{row.commodity}</small>
+                <small style={{ display: 'block', color: colors.muted, fontSize: 12, lineHeight: 1.35, marginTop: 5 }}>{row.next_action}</small>
+              </div>
+            ))}
+          </div>
+        </aside>
+      </main>
+
+      <section>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, color: colors.muted }}>
+          <h2 style={{ color: colors.text, fontSize: 16, margin: 0 }}>HS8 Research Gaps</h2>
+          <span>{filteredGaps.length} rows</span>
+        </div>
+        <div style={{ ...card, overflow: 'auto', maxHeight: 460 }}>
+          <table style={{ width: '100%', minWidth: 1180, borderCollapse: 'collapse', fontSize: 12 }}>
+            <thead>
+              <tr>
+                {['HS8', 'Commodity', 'Category', 'Import value', 'Status', 'Next action'].map((head) => <th key={head} style={th}>{head}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {filteredGaps.map((row) => (
+                <tr key={row.hs8} style={{ borderBottom: `1px solid ${colors.line}` }}>
+                  <td style={tdStrong}><strong>{row.hs8}</strong><small>{row.hs4}</small></td>
+                  <td style={tdStrong}><strong>{row.commodity}</strong><small>{row.research_lane}</small></td>
+                  <td style={tdStrong}><strong>{row.category_pod}</strong><small>{row.category_label}</small></td>
+                  <td style={td}>{usdMn(row.val_2024_25)}</td>
+                  <td style={td}><Badge>{row.coverage_status}</Badge></td>
+                  <td style={td}>{row.next_action}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function ResearchPlan({ hs8, batch }) {
   const needs = hs8.filter((row) => row.computed_research_status === 'needs_marketplace_research').length;
   const priceSeen = hs8.filter((row) => row.computed_research_status === 'price_seen_needs_exact_match').length;
@@ -466,16 +681,17 @@ function ResearchPlan({ hs8, batch }) {
 }
 
 function PlanLine({ label, value }) {
+  const displayValue = typeof value === 'number' ? fmt0.format(value) : value;
   return (
     <span style={{ display: 'flex', justifyContent: 'space-between', gap: 12, color: colors.muted, background: colors.panel2, border: `1px solid ${colors.line}`, borderRadius: 6, padding: '8px 10px' }}>
       {label}
-      <strong style={{ color: colors.text }}>{fmt0.format(value)}</strong>
+      <strong style={{ color: colors.text }}>{displayValue}</strong>
     </span>
   );
 }
 
 export default function ComponentResearch() {
-  const { loading, error, products, hs8, refs, batch, reload } = useResearchData();
+  const { loading, error, products, hs8, refs, batch, hs4Coverage, researchGaps, reload } = useResearchData();
   const [activeTab, setActiveTab] = useState('products');
   const [selectedProductId, setSelectedProductId] = useState(null);
   const [selectedHs8, setSelectedHs8] = useState(null);
@@ -509,7 +725,8 @@ export default function ComponentResearch() {
   const selectedHs8Row = hs8.find((row) => row.hs8 === selectedHs8) || filteredHs8[0];
   const exactProof = products.filter((row) => String(row.proof_status || '').toLowerCase().includes('exact')).length;
   const tradeable = products.filter((row) => row.is_tradeable_for_new_importer).length;
-  const adjacent = hs8.filter((row) => row.non_electronics).length;
+  const coverageTotal = hs4Coverage.reduce((sum, row) => sum + n(row.total_hs8_codes), 0);
+  const openGaps = hs4Coverage.reduce((sum, row) => sum + n(row.hs8_to_promote), 0);
 
   if (loading) return <div style={{ color: colors.muted, padding: 40 }}>Loading live Supabase research workspace...</div>;
 
@@ -530,16 +747,17 @@ export default function ComponentResearch() {
 
       <section style={{ display: 'grid', gridTemplateColumns: 'repeat(5,minmax(0,1fr))', gap: 12, marginBottom: 14 }}>
         <Metric label="HS8 queue" value={fmt0.format(hs8.length)} color={colors.cyan} />
-        <Metric label="Adjacent challengers" value={fmt0.format(adjacent)} color={colors.amber} />
+        <Metric label="Coverage universe" value={fmt0.format(coverageTotal)} color={colors.cyan} />
+        <Metric label="Open HS8 gaps" value={fmt0.format(openGaps)} color={colors.amber} />
         <Metric label="Product validations" value={fmt0.format(products.length)} color={colors.green} />
         <Metric label="Tradeable now" value={fmt0.format(tradeable)} color={colors.green} />
-        <Metric label="Exact proof rows" value={fmt0.format(exactProof)} color={colors.blue} />
       </section>
 
       <nav style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
         {[
           ['products', 'Validated Products'],
           ['hs8', 'HS8 Research Queue'],
+          ['coverage', 'Category Coverage'],
           ['plan', 'Execution Plan']
         ].map(([id, labelText]) => (
           <button
@@ -553,7 +771,7 @@ export default function ComponentResearch() {
         ))}
       </nav>
 
-      {activeTab !== 'plan' && <Filters filters={filters} setFilters={setFilters} rows={activeRows} activeTab={activeTab} />}
+      {(activeTab === 'products' || activeTab === 'hs8') && <Filters filters={filters} setFilters={setFilters} rows={activeRows} activeTab={activeTab} />}
 
       {activeTab === 'products' && (
         <main style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 410px', gap: 14, alignItems: 'start' }}>
@@ -580,6 +798,8 @@ export default function ComponentResearch() {
           <Hs8Detail row={selectedHs8Row} />
         </main>
       )}
+
+      {activeTab === 'coverage' && <CoverageDashboard hs4Coverage={hs4Coverage} researchGaps={researchGaps} />}
 
       {activeTab === 'plan' && <ResearchPlan hs8={hs8} batch={batch} />}
     </div>
