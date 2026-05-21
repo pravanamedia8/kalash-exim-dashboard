@@ -74,6 +74,11 @@ function clean(value) {
   return value || '-';
 }
 
+function humanStatus(value) {
+  if (!value) return '-';
+  return String(value).replaceAll('_', ' ');
+}
+
 function tone(value) {
   const text = String(value || '').toLowerCase();
   if (text.includes('exact') || text.includes('verified') || text.includes('shortlist') || text.includes('winner')) return colors.green;
@@ -159,21 +164,25 @@ function useResearchData() {
     batch: [],
     hs4Coverage: [],
     hs8Coverage: [],
-    researchGaps: []
+    researchGaps: [],
+    categoryWorkplan: [],
+    volzaUploadedCategories: []
   });
 
   async function load() {
     setState((old) => ({ ...old, loading: true, error: '' }));
-    const [products, hs8, refs, batch, hs4Coverage, hs8Coverage, researchGaps] = await Promise.all([
+    const [products, hs8, refs, batch, hs4Coverage, hs8Coverage, researchGaps, categoryWorkplan, volzaUploadedCategories] = await Promise.all([
       supabase.from('component_dashboard_products').select('*').order('priority_rank', { ascending: true }),
       supabase.from('component_dashboard_hs8').select('*').order('live_score', { ascending: false }).limit(1000),
       supabase.from('component_market_price_refs').select('*').order('checked_at', { ascending: false }).limit(500),
       supabase.from('component_next_research_batch').select('*').order('research_rank', { ascending: true }).limit(100),
       supabase.from('component_dashboard_hs4_coverage').select('*').order('research_order', { ascending: true }),
       supabase.from('component_dashboard_hs8_coverage').select('*').order('research_order', { ascending: true }).limit(1500),
-      supabase.from('component_dashboard_research_gaps').select('*').order('val_2024_25', { ascending: false }).limit(500)
+      supabase.from('component_dashboard_research_gaps').select('*').order('val_2024_25', { ascending: false }).limit(500),
+      supabase.from('component_category_workplan_summary').select('*').order('research_order', { ascending: true }),
+      supabase.from('component_volza_uploaded_category_summary').select('*').order('uploaded_rows', { ascending: false })
     ]);
-    const error = products.error || hs8.error || refs.error || batch.error || hs4Coverage.error || hs8Coverage.error || researchGaps.error;
+    const error = products.error || hs8.error || refs.error || batch.error || hs4Coverage.error || hs8Coverage.error || researchGaps.error || categoryWorkplan.error || volzaUploadedCategories.error;
     if (error) {
       setState({
         loading: false,
@@ -184,7 +193,9 @@ function useResearchData() {
         batch: [],
         hs4Coverage: [],
         hs8Coverage: [],
-        researchGaps: []
+        researchGaps: [],
+        categoryWorkplan: [],
+        volzaUploadedCategories: []
       });
       return;
     }
@@ -197,7 +208,9 @@ function useResearchData() {
       batch: batch.data || [],
       hs4Coverage: hs4Coverage.data || [],
       hs8Coverage: hs8Coverage.data || [],
-      researchGaps: researchGaps.data || []
+      researchGaps: researchGaps.data || [],
+      categoryWorkplan: categoryWorkplan.data || [],
+      volzaUploadedCategories: volzaUploadedCategories.data || []
     });
   }
 
@@ -472,9 +485,53 @@ function CoverageBar({ label, value, total, color }) {
   );
 }
 
-function CoverageDashboard({ hs4Coverage, researchGaps }) {
+function splitCodes(value) {
+  if (!value) return [];
+  return String(value).split(',').map((item) => item.trim()).filter(Boolean);
+}
+
+function CodeList({ codes, empty = 'No codes' }) {
+  const items = splitCodes(codes);
+  if (!items.length) return <span style={{ color: colors.muted, fontSize: 12 }}>{empty}</span>;
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, maxHeight: 112, overflow: 'auto' }}>
+      {items.map((code) => (
+        <span
+          key={code}
+          style={{
+            background: 'rgba(79,140,255,0.12)',
+            border: '1px solid rgba(79,140,255,0.24)',
+            borderRadius: 5,
+            color: '#bfdbfe',
+            fontFamily: 'ui-monospace, SFMono-Regular, Consolas, monospace',
+            fontSize: 11,
+            lineHeight: 1,
+            padding: '5px 6px'
+          }}
+        >
+          {code}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function StackedCell({ primary, secondary }) {
+  return (
+    <div style={{ display: 'grid', gap: 4, minWidth: 0 }}>
+      <strong style={{ display: 'block', color: colors.text, lineHeight: 1.35, maxWidth: '100%', overflowWrap: 'anywhere' }}>{clean(primary)}</strong>
+      {secondary ? <small style={{ display: 'block', color: colors.muted, fontSize: 11, lineHeight: 1.35, maxWidth: '100%', overflowWrap: 'anywhere' }}>{clean(secondary)}</small> : null}
+    </div>
+  );
+}
+
+function CoverageDashboard({ hs4Coverage, hs8Coverage, researchGaps, categoryWorkplan, volzaUploadedCategories }) {
   const [filters, setFilters] = useState({ search: '', category: 'ALL', status: 'ALL', sort: 'gaps_desc' });
-  const categories = useMemo(() => Array.from(new Set(hs4Coverage.map((row) => row.category_pod).filter(Boolean))).sort(), [hs4Coverage]);
+  const categories = useMemo(() => Array.from(new Set([
+    ...hs4Coverage.map((row) => row.category_pod),
+    ...categoryWorkplan.map((row) => row.category_pod),
+    ...volzaUploadedCategories.map((row) => row.category_pod)
+  ].filter(Boolean))).sort(), [hs4Coverage, categoryWorkplan, volzaUploadedCategories]);
   const statuses = useMemo(() => Array.from(new Set(researchGaps.map((row) => row.coverage_status).filter(Boolean))).sort(), [researchGaps]);
 
   const filteredHs4 = useMemo(() => {
@@ -503,6 +560,54 @@ function CoverageDashboard({ hs4Coverage, researchGaps }) {
       .sort((a, b) => n(b.val_2024_25) - n(a.val_2024_25));
   }, [researchGaps, filters]);
 
+  const filteredNoVolza = useMemo(() => {
+    const query = filters.search.trim().toLowerCase();
+    return hs8Coverage
+      .filter((row) => {
+        if (row.coverage_status !== 'NO_VOLZA_DATA') return false;
+        if (filters.category !== 'ALL' && row.category_pod !== filters.category) return false;
+        if (!query) return true;
+        return [row.hs8, row.hs4, row.commodity, row.category_label, row.research_lane, row.next_action].join(' ').toLowerCase().includes(query);
+      })
+      .sort((a, b) => String(a.hs4 || '').localeCompare(String(b.hs4 || '')) || String(a.hs8 || '').localeCompare(String(b.hs8 || '')));
+  }, [hs8Coverage, filters]);
+
+  const filteredWorkplan = useMemo(() => {
+    const query = filters.search.trim().toLowerCase();
+    return categoryWorkplan
+      .filter((row) => {
+        if (filters.category !== 'ALL' && row.category_pod !== filters.category) return false;
+        if (!query) return true;
+        return [
+          row.category_pod,
+          row.category_label,
+          row.hs4_codes_in_scope,
+          row.hs8_codes_in_scope,
+          row.hs8_codes_needing_volza,
+          row.uploaded_source_hs8_codes,
+          row.category_work_status
+        ].join(' ').toLowerCase().includes(query);
+      })
+      .sort((a, b) => n(b.hs8_needing_volza) - n(a.hs8_needing_volza));
+  }, [categoryWorkplan, filters]);
+
+  const filteredUploads = useMemo(() => {
+    const query = filters.search.trim().toLowerCase();
+    return volzaUploadedCategories
+      .filter((row) => {
+        if (filters.category !== 'ALL' && row.category_pod !== filters.category) return false;
+        if (!query) return true;
+        return [
+          row.category_pod,
+          row.category_label,
+          row.uploaded_hs4_codes,
+          row.uploaded_source_hs6_codes,
+          row.uploaded_source_hs8_codes
+        ].join(' ').toLowerCase().includes(query);
+      })
+      .sort((a, b) => n(b.uploaded_rows) - n(a.uploaded_rows));
+  }, [volzaUploadedCategories, filters]);
+
   const totals = useMemo(() => hs4Coverage.reduce((acc, row) => {
     acc.total += n(row.total_hs8_codes);
     acc.inQueue += n(row.hs8_in_queue);
@@ -512,6 +617,7 @@ function CoverageDashboard({ hs4Coverage, researchGaps }) {
     acc.importValue += n(row.total_import_value_2024_25);
     return acc;
   }, { total: 0, inQueue: 0, priceScreened: 0, validated: 0, toPromote: 0, importValue: 0 }), [hs4Coverage]);
+  const uploadedRows = volzaUploadedCategories.reduce((sum, row) => sum + n(row.uploaded_rows), 0);
 
   return (
     <div style={{ display: 'grid', gap: 14 }}>
@@ -529,6 +635,8 @@ function CoverageDashboard({ hs4Coverage, researchGaps }) {
           <div style={{ display: 'grid', gap: 8, marginTop: 14 }}>
             <PlanLine label="Total import value" value={usdMn(totals.importValue)} />
             <PlanLine label="Rows in gap view" value={fmt0.format(researchGaps.length)} />
+            <PlanLine label="Confirmed no Volza data" value={fmt0.format(hs8Coverage.filter((row) => row.coverage_status === 'NO_VOLZA_DATA').length)} />
+            <PlanLine label="Uploaded Volza rows" value={fmt0.format(uploadedRows)} />
             <PlanLine label="Filtered gaps" value={fmt0.format(filteredGaps.length)} />
           </div>
         </div>
@@ -551,6 +659,43 @@ function CoverageDashboard({ hs4Coverage, researchGaps }) {
           <option value="price_asc">Price coverage low to high</option>
         </select>
         <button style={button} type="button" onClick={() => setFilters({ search: '', category: 'ALL', status: 'ALL', sort: 'gaps_desc' })}>Reset</button>
+      </section>
+
+      <section>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, color: colors.muted }}>
+          <h2 style={{ color: colors.text, fontSize: 16, margin: 0 }}>Category Workplan</h2>
+          <span>{filteredWorkplan.length} categories</span>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 14 }}>
+          {filteredWorkplan.map((row) => (
+            <article key={row.category_pod} style={{ ...card, padding: 16 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', marginBottom: 12 }}>
+                <div>
+                  <h3 style={{ margin: '0 0 4px', fontSize: 16 }}>{row.category_pod}</h3>
+                  <p style={{ margin: 0, color: colors.muted, fontSize: 12 }}>{row.category_label}</p>
+                </div>
+                <Badge>{row.category_work_status}</Badge>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,minmax(0,1fr))', gap: 8, marginBottom: 12 }}>
+                <PlanLine label="HS8 total" value={fmt0.format(n(row.hs8_total))} />
+                <PlanLine label="Need Volza" value={fmt0.format(n(row.hs8_needing_volza))} />
+                <PlanLine label="Uploaded rows" value={fmt0.format(n(row.uploaded_rows))} />
+              </div>
+              <div style={{ display: 'grid', gap: 7, marginTop: 12 }}>
+                <strong style={{ color: colors.text, fontSize: 12 }}>HS4 to download</strong>
+                <CodeList codes={row.hs4_codes_needing_volza_download} empty="No HS4 download gap" />
+              </div>
+              <div style={{ display: 'grid', gap: 7, marginTop: 12 }}>
+                <strong style={{ color: colors.text, fontSize: 12 }}>HS8 needing Volza landed cost</strong>
+                <CodeList codes={row.hs8_codes_needing_volza} empty="No pending HS8" />
+              </div>
+              <div style={{ display: 'grid', gap: 7, marginTop: 12 }}>
+                <strong style={{ color: colors.text, fontSize: 12 }}>All HS8 in this category</strong>
+                <CodeList codes={row.hs8_codes_in_scope} />
+              </div>
+            </article>
+          ))}
+        </div>
       </section>
 
       <main style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 420px', gap: 14, alignItems: 'start' }}>
@@ -610,21 +755,49 @@ function CoverageDashboard({ hs4Coverage, researchGaps }) {
           <span>{filteredGaps.length} rows</span>
         </div>
         <div style={{ ...card, overflow: 'auto', maxHeight: 460 }}>
-          <table style={{ width: '100%', minWidth: 1180, borderCollapse: 'collapse', fontSize: 12 }}>
+          <table style={{ width: '100%', minWidth: 1320, tableLayout: 'fixed', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead>
               <tr>
-                {['HS8', 'Commodity', 'Category', 'Import value', 'Status', 'Next action'].map((head) => <th key={head} style={th}>{head}</th>)}
+                {['HS8', 'Commodity', 'Category', 'Import value', 'Status', 'Next action'].map((head, index) => <th key={head} style={{ ...th, width: [120, 390, 330, 115, 230, 260][index] }}>{head}</th>)}
               </tr>
             </thead>
             <tbody>
               {filteredGaps.map((row) => (
                 <tr key={row.hs8} style={{ borderBottom: `1px solid ${colors.line}` }}>
-                  <td style={tdStrong}><strong>{row.hs8}</strong><small>{row.hs4}</small></td>
-                  <td style={tdStrong}><strong>{row.commodity}</strong><small>{row.research_lane}</small></td>
-                  <td style={tdStrong}><strong>{row.category_pod}</strong><small>{row.category_label}</small></td>
+                  <td style={tdStrong}><StackedCell primary={row.hs8} secondary={row.hs4} /></td>
+                  <td style={tdStrong}><StackedCell primary={row.commodity} secondary={row.research_lane} /></td>
+                  <td style={tdStrong}><StackedCell primary={row.category_pod} secondary={row.category_label} /></td>
                   <td style={td}>{usdMn(row.val_2024_25)}</td>
-                  <td style={td}><Badge>{row.coverage_status}</Badge></td>
-                  <td style={td}>{row.next_action}</td>
+                  <td style={td}><Badge>{humanStatus(row.coverage_status)}</Badge></td>
+                  <td style={{ ...td, overflowWrap: 'anywhere' }}>{row.next_action}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, color: colors.muted }}>
+          <h2 style={{ color: colors.text, fontSize: 16, margin: 0 }}>Confirmed No Volza Data</h2>
+          <span>{filteredNoVolza.length} rows</span>
+        </div>
+        <div style={{ ...card, overflow: 'auto', maxHeight: 460 }}>
+          <table style={{ width: '100%', minWidth: 1320, tableLayout: 'fixed', borderCollapse: 'collapse', fontSize: 12 }}>
+            <thead>
+              <tr>
+                {['HS8', 'Commodity', 'Category', 'Import value', 'Status', 'Revisit rule'].map((head, index) => <th key={head} style={{ ...th, width: [120, 390, 330, 115, 230, 260][index] }}>{head}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {filteredNoVolza.map((row) => (
+                <tr key={`no-volza-${row.hs8}`} style={{ borderBottom: `1px solid ${colors.line}` }}>
+                  <td style={tdStrong}><StackedCell primary={row.hs8} secondary={row.hs4} /></td>
+                  <td style={tdStrong}><StackedCell primary={row.commodity} secondary={row.research_lane} /></td>
+                  <td style={tdStrong}><StackedCell primary={row.category_pod} secondary={row.category_label} /></td>
+                  <td style={td}>{usdMn(row.val_2024_25)}</td>
+                  <td style={td}><Badge>{humanStatus(row.coverage_status)}</Badge></td>
+                  <td style={{ ...td, overflowWrap: 'anywhere' }}>Recheck only if a new Volza window, buyer lead, or strategy change appears.</td>
                 </tr>
               ))}
             </tbody>
@@ -691,7 +864,7 @@ function PlanLine({ label, value }) {
 }
 
 export default function ComponentResearch() {
-  const { loading, error, products, hs8, refs, batch, hs4Coverage, researchGaps, reload } = useResearchData();
+  const { loading, error, products, hs8, refs, batch, hs4Coverage, hs8Coverage, researchGaps, categoryWorkplan, volzaUploadedCategories, reload } = useResearchData();
   const [activeTab, setActiveTab] = useState('products');
   const [selectedProductId, setSelectedProductId] = useState(null);
   const [selectedHs8, setSelectedHs8] = useState(null);
@@ -799,7 +972,15 @@ export default function ComponentResearch() {
         </main>
       )}
 
-      {activeTab === 'coverage' && <CoverageDashboard hs4Coverage={hs4Coverage} researchGaps={researchGaps} />}
+      {activeTab === 'coverage' && (
+        <CoverageDashboard
+          hs4Coverage={hs4Coverage}
+          hs8Coverage={hs8Coverage}
+          researchGaps={researchGaps}
+          categoryWorkplan={categoryWorkplan}
+          volzaUploadedCategories={volzaUploadedCategories}
+        />
+      )}
 
       {activeTab === 'plan' && <ResearchPlan hs8={hs8} batch={batch} />}
     </div>
