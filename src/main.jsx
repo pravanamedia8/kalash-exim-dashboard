@@ -18,31 +18,24 @@ function human(value) {
   return String(clean(value)).replaceAll('_', ' ');
 }
 
-function money(value) {
-  if (value === null || value === undefined || value === '') return '-';
-  return 'INR ' + fmt.format(Number(value));
-}
-
 function usdMn(value) {
   if (value === null || value === undefined || value === '') return '-';
   return '$' + fmt1.format(Number(value)) + 'M';
 }
 
-function pct(value) {
-  if (value === null || value === undefined || value === '') return '-';
-  return fmt1.format(Number(value)) + '%';
-}
-
 function tone(value) {
   const text = String(value || '').toLowerCase();
-  if (text.includes('pass') || text.includes('verified') || text.includes('fresh') || text.includes('keep') || text.includes('buyer_led')) return 'good';
-  if (text.includes('required') || text.includes('watch') || text.includes('quote') || text.includes('proxy') || text.includes('open')) return 'watch';
-  if (text.includes('reject') || text.includes('fail') || text.includes('mismatch') || text.includes('not_usable') || text.includes('not_passed')) return 'bad';
+  if (text.includes('complete') || text.includes('verified') || text.includes('fresh') || text.includes('pass') || text.includes('ready')) return 'good';
+  if (text.includes('progress') || text.includes('partial') || text.includes('open') || text.includes('blocked') || text.includes('stale')) return 'watch';
+  if (text.includes('fail') || text.includes('reject') || text.includes('missing') || text.includes('not_usable')) return 'bad';
   return 'muted';
 }
 
 function useData() {
-  const empty = { loading: true, error: '', buySell: [], inflow: [], audit: [], evidence: [], unit: [], spot: [], rejects: [], products: [] };
+  const empty = {
+    loading: true, error: '', buySell: [], inflow: [], audit: [], evidence: [], rejects: [], products: [],
+    phase1Counts: [], planTodos: [], nextActions: [], finalGuardrails: [], exactUnits: [], supplierAudit: [], hs4Progress: []
+  };
   const [state, setState] = useState(empty);
 
   async function load() {
@@ -51,32 +44,32 @@ function useData() {
       return;
     }
     setState((old) => ({ ...old, loading: true, error: '' }));
-    const [buySell, inflow, audit, evidence, unit, spot, rejects, products] = await Promise.all([
+    const [buySell, inflow, audit, evidence, rejects, products, phase1Counts, planTodos, nextActions, finalGuardrails, exactUnits, supplierAudit, hs4Progress] = await Promise.all([
       supabase.from('component_dashboard_buy_sell_hs_codes').select('*').order('sorting_rank', { ascending: true }).limit(2000),
       supabase.from('component_researched_sku_inflow').select('*').order('researched_at', { ascending: false }).limit(500),
-      supabase.from('component_hs8_research_audit').select('*').order('final_score', { ascending: false, nullsFirst: false }).limit(1000),
+      supabase.from('component_hs8_research_audit').select('*').order('updated_at', { ascending: false }).limit(1000),
       supabase.from('component_research_evidence_refs').select('*').order('checked_at', { ascending: false }).limit(1000),
-      supabase.from('component_unit_margin_audits').select('*').order('checked_at', { ascending: false }).limit(500),
-      supabase.from('component_spot_buy_opportunities').select('*').order('updated_at', { ascending: false }).limit(500),
       supabase.from('component_rejection_register').select('*').order('updated_at', { ascending: false }).limit(500),
-      supabase.from('component_dashboard_products').select('*').order('priority_rank', { ascending: true }).limit(500)
+      supabase.from('component_dashboard_products').select('*').order('priority_rank', { ascending: true }).limit(500),
+      supabase.from('component_dashboard_phase1_control_counts').select('*').order('metric', { ascending: true }),
+      supabase.from('component_plan_phase_wave_todos').select('*').order('phase_number', { ascending: true }).order('wave_number', { ascending: true, nullsFirst: true }).order('task_order', { ascending: true }).limit(200),
+      supabase.from('component_plan_next_actions').select('*').order('action_priority', { ascending: true }).order('phase_number', { ascending: true }).limit(100),
+      supabase.from('component_final_ranking_guardrail').select('*').order('guardrail_status', { ascending: true }).limit(500),
+      supabase.from('component_wave1_exact_unit_recheck_dashboard').select('*').order('validation_id', { ascending: true }).limit(500),
+      supabase.from('component_supplier_verification_audit').select('*').order('checked_at', { ascending: false }).limit(500),
+      supabase.from('component_wave_hs4_scope_progress').select('*').order('hs4', { ascending: true })
     ]);
-    const error = buySell.error || inflow.error || audit.error || evidence.error || unit.error || spot.error || rejects.error || products.error;
+    const error = buySell.error || inflow.error || audit.error || evidence.error || rejects.error || products.error || phase1Counts.error || planTodos.error || nextActions.error || finalGuardrails.error || exactUnits.error || supplierAudit.error || hs4Progress.error;
     if (error) {
       setState({ ...empty, loading: false, error: error.message });
       return;
     }
     setState({
-      loading: false,
-      error: '',
-      buySell: buySell.data || [],
-      inflow: inflow.data || [],
-      audit: audit.data || [],
-      evidence: evidence.data || [],
-      unit: unit.data || [],
-      spot: spot.data || [],
-      rejects: rejects.data || [],
-      products: products.data || []
+      loading: false, error: '', buySell: buySell.data || [], inflow: inflow.data || [], audit: audit.data || [],
+      evidence: evidence.data || [], rejects: rejects.data || [], products: products.data || [],
+      phase1Counts: phase1Counts.data || [], planTodos: planTodos.data || [], nextActions: nextActions.data || [],
+      finalGuardrails: finalGuardrails.data || [], exactUnits: exactUnits.data || [], supplierAudit: supplierAudit.data || [],
+      hs4Progress: hs4Progress.data || []
     });
   }
 
@@ -92,107 +85,68 @@ function Metric({ label, value, color = '' }) {
   return <div className={'metric ' + color}><span>{label}</span><strong>{value}</strong></div>;
 }
 
-function FilterSelect({ value, onChange, options, allLabel }) {
-  return <select value={value} onChange={(event) => onChange(event.target.value)}><option value="ALL">{allLabel}</option>{options.map((item) => <option key={item} value={item}>{human(item)}</option>)}</select>;
-}
-
 function Stack({ primary, secondary }) {
   return <div className="stack"><strong>{clean(primary)}</strong>{secondary ? <span>{clean(secondary)}</span> : null}</div>;
-}
-
-function BuySellMap({ rows, inflow }) {
-  const [filters, setFilters] = useState({ search: '', category: 'ALL', priority: 'ALL', gate: 'ALL', risk: 'ALL', sort: 'rank' });
-  const categories = useMemo(() => Array.from(new Set(rows.map((row) => row.category_pod).filter(Boolean))).sort(), [rows]);
-  const priorities = useMemo(() => Array.from(new Set(rows.map((row) => row.research_priority).filter(Boolean))).sort(), [rows]);
-  const gates = useMemo(() => Array.from(new Set(rows.map((row) => row.final_classification).filter(Boolean))).sort(), [rows]);
-
-  const filtered = useMemo(() => {
-    const q = filters.search.trim().toLowerCase();
-    const out = rows.filter((row) => {
-      if (filters.category !== 'ALL' && row.category_pod !== filters.category) return false;
-      if (filters.priority !== 'ALL' && row.research_priority !== filters.priority) return false;
-      if (filters.gate !== 'ALL' && row.final_classification !== filters.gate) return false;
-      if (filters.risk === 'unit' && !String(row.unit_risk || '').toLowerCase().includes('risk')) return false;
-      if (filters.risk === 'margin' && !String(row.margin_risk || '').toLowerCase().includes('required')) return false;
-      if (filters.risk === 'researched' && !Number(row.researched_sku_count || 0)) return false;
-      if (!q) return true;
-      const haystack = [row.hs8, row.hs6, row.hs4, row.category_pod, row.category_label, row.buy_category, row.sell_category, row.typical_products, row.target_buyer_layer, row.target_supplier_layer, row.commodity, row.next_action, row.filter_tags].join(' ').toLowerCase();
-      return haystack.includes(q);
-    });
-    const copy = [...out];
-    if (filters.sort === 'value') return copy.sort((a, b) => Number(b.val_2024_25 || 0) - Number(a.val_2024_25 || 0));
-    if (filters.sort === 'buyers') return copy.sort((a, b) => Number(b.unique_buyers || 0) - Number(a.unique_buyers || 0));
-    if (filters.sort === 'margin') return copy.sort((a, b) => Number(b.real_margin_pct || -999) - Number(a.real_margin_pct || -999));
-    if (filters.sort === 'evidence') return copy.sort((a, b) => Number(b.researched_sku_count || 0) - Number(a.researched_sku_count || 0));
-    return copy.sort((a, b) => Number(a.sorting_rank || 99999) - Number(b.sorting_rank || 99999));
-  }, [rows, filters]);
-
-  return <>
-    <section className="filters wide">
-      <input value={filters.search} onChange={(event) => setFilters({ ...filters, search: event.target.value })} placeholder="Search HS8, category, what to buy, how to sell, buyer layer..." />
-      <FilterSelect value={filters.category} onChange={(category) => setFilters({ ...filters, category })} options={categories} allLabel="All categories" />
-      <FilterSelect value={filters.priority} onChange={(priority) => setFilters({ ...filters, priority })} options={priorities} allLabel="All priority" />
-      <FilterSelect value={filters.gate} onChange={(gate) => setFilters({ ...filters, gate })} options={gates} allLabel="All gates" />
-      <select value={filters.risk} onChange={(event) => setFilters({ ...filters, risk: event.target.value })}>
-        <option value="ALL">All risks</option><option value="unit">Unit risk</option><option value="margin">Margin open</option><option value="researched">Has SKU inflow</option>
-      </select>
-      <select value={filters.sort} onChange={(event) => setFilters({ ...filters, sort: event.target.value })}>
-        <option value="rank">Plan rank</option><option value="value">Import value</option><option value="buyers">Buyers</option><option value="margin">Margin</option><option value="evidence">Evidence</option>
-      </select>
-      <button onClick={() => setFilters({ search: '', category: 'ALL', priority: 'ALL', gate: 'ALL', risk: 'ALL', sort: 'rank' })}>Reset</button>
-    </section>
-    <main className="split buy-sell-split">
-      <section>
-        <div className="section-title"><h2>HS Code Buy / Sell Map</h2><span>{fmt.format(filtered.length)} rows</span></div>
-        <div className="table-wrap buy-sell-table"><table><thead><tr><th>HS</th><th>Category</th><th>What to buy</th><th>How to sell</th><th>Buyer layer</th><th>Supplier layer</th><th>Demand</th><th>Risk / gate</th><th>Next action</th></tr></thead><tbody>{filtered.map((row) => <tr key={row.hs8}><td><Stack primary={row.hs8} secondary={`${row.hs4} | ${row.research_priority || 'P3'}`} /></td><td><Stack primary={row.category_pod} secondary={row.category_label || row.commodity} /></td><td><Stack primary={row.buy_category} secondary={row.typical_products} /></td><td><Stack primary={row.sell_category} secondary={row.research_lane} /></td><td>{clean(row.target_buyer_layer)}</td><td>{clean(row.target_supplier_layer)}</td><td><Stack primary={`${fmt.format(Number(row.unique_buyers || 0))} buyers`} secondary={`${fmt.format(Number(row.shipment_count || 0))} shipments | ${usdMn(row.val_2024_25)}`} /></td><td><Badge value={row.final_classification || row.margin_risk} /><span>{human(row.unit_risk)} | {human(row.compliance_risk)}</span><span>{fmt.format(Number(row.researched_sku_count || 0))} researched SKU</span></td><td>{clean(row.next_action || row.latest_preliminary_verdict || 'Queue exact product research')}</td></tr>)}</tbody></table></div>
-      </section>
-      <aside className="panel"><div className="panel-title"><span>Researched SKU Inflow</span><Badge value={`${inflow.length} rows`} /></div><h2>Latest Evidence Rows</h2><div className="mini-list">{inflow.slice(0, 16).map((row) => <span key={row.id}><strong>{row.product_or_sku}</strong>{row.hs8} | {human(row.preliminary_verdict)} | evidence: {human(row.evidence_status)} | margin: {human(row.margin_gate_status)}</span>)}</div></aside>
-    </main>
-  </>;
-}
-
-function AuditGates({ audit, evidence, unit, spot, rejects }) {
-  const [query, setQuery] = useState('');
-  const [picked, setPicked] = useState(null);
-  const rows = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return audit.filter((row) => !q || [row.hs8, row.hs4, row.commodity, row.evidence_quality_status, row.margin_gate_status, row.final_classification, row.notes].join(' ').toLowerCase().includes(q));
-  }, [audit, query]);
-  const selected = picked || rows[0];
-  return <>
-    <section className="filters"><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search HS8, commodity, gate status..." /><span>{fmt.format(rows.length)} rows</span></section>
-    <main className="split"><section><div className="section-title"><h2>Evidence-First Gate Register</h2><span>No winner without exact evidence, unit match, normalized margin, capital and buyer gates.</span></div><div className="table-wrap"><table><thead><tr><th>HS8</th><th>Commodity</th><th>Evidence</th><th>Unit</th><th>Margin</th><th>Capital</th><th>Buyer</th><th>Final</th><th>Score</th></tr></thead><tbody>{rows.map((row) => <tr key={row.hs8} className={selected?.hs8 === row.hs8 ? 'selected' : ''} onClick={() => setPicked(row)}><td><Stack primary={row.hs8} secondary={row.hs4} /></td><td><Stack primary={row.commodity} secondary={row.notes} /></td><td><Badge value={row.evidence_quality_status} /></td><td><Badge value={row.unit_gate_status} /></td><td><Badge value={row.margin_gate_status} /></td><td><Badge value={row.working_capital_status} /></td><td><Badge value={row.buyer_validation_status} /></td><td><Badge value={row.final_classification} /></td><td>{clean(row.final_score)}</td></tr>)}</tbody></table></div></section><GateDetail row={selected} evidence={evidence} unit={unit} spot={spot} rejects={rejects} /></main>
-  </>;
-}
-
-function GateDetail({ row, evidence, unit, spot, rejects }) {
-  if (!row) return <aside className="panel empty">Select a row.</aside>;
-  const ev = evidence.filter((item) => item.hs8 === row.hs8).slice(0, 10);
-  const un = unit.filter((item) => item.hs8 === row.hs8).slice(0, 5);
-  const sp = spot.filter((item) => item.hs8 === row.hs8).slice(0, 5);
-  const rj = rejects.filter((item) => item.hs8 === row.hs8).slice(0, 5);
-  return <aside className="panel"><div className="panel-title"><span>Gate Detail</span><Badge value={row.final_classification} /></div><h2>{row.hs8}</h2><p>{row.commodity}</p><div className="gate-grid">{[['Evidence', row.evidence_quality_status], ['Unit', row.unit_gate_status], ['Margin', row.margin_gate_status], ['Capital', row.working_capital_status], ['Buyer', row.buyer_validation_status], ['Final', row.final_classification]].map(([label, value]) => <div className={'gate ' + tone(value)} key={label}><span>{label}</span><strong>{human(value || 'not started')}</strong></div>)}</div><div className="detail-grid"><div><span>Normalized margin</span><strong>{pct(row.normalized_margin_pct)}</strong></div><div><span>Test capital</span><strong>{money(row.first_test_capital_inr)}</strong></div><div><span>Blind cap</span><strong>{money(row.max_blind_test_budget_inr || 300000)}</strong></div><div><span>Inventory risk</span><strong>{human(row.inventory_risk)}</strong></div></div><section className="note"><strong>Score notes</strong><p>{row.final_score_notes || row.notes || 'No notes yet.'}</p></section><Mini title="Evidence refs" rows={ev.map((x) => `${x.source_name || x.evidence_phase} | ${human(x.evidence_quality)} | ${human(x.unit_basis)} | ${String(x.checked_at || '').slice(0, 10)}`)} /><Mini title="Unit audits" rows={un.map((x) => `${human(x.unit_match_status)} | ${human(x.audit_status)} | ${pct(x.normalized_margin_pct)} | ${human(x.audit_notes)}`)} /><Mini title="Spot / rejection" rows={[...sp.map((x) => `${x.product_or_sku || x.product_family} | ${human(x.spot_buy_fit || x.verdict)} | ${human(x.brand_risk)}`), ...rj.map((x) => `${x.product_or_sku || row.hs8} | ${human(x.rejection_phase)} | ${x.rejection_reason}`)]} /></aside>;
 }
 
 function Mini({ title, rows }) {
   return <section className="mini"><strong>{title}</strong>{rows.length ? rows.map((row, index) => <span key={index}>{row}</span>) : <span>No rows yet</span>}</section>;
 }
 
-function SimpleTable({ title, rows, type }) {
-  return <section><div className="section-title"><h2>{title}</h2><span>{fmt.format(rows.length)} rows</span></div><div className="table-wrap"><table><thead><tr>{type === 'products' ? <><th>Rank</th><th>Product</th><th>SKU / spec</th><th>Proof</th><th>Margin</th><th>Landed</th><th>Verdict</th></> : <><th>SKU</th><th>HS8</th><th>Family</th><th>Evidence</th><th>Unit</th><th>Margin</th><th>Verdict</th></>}</tr></thead><tbody>{rows.map((row) => type === 'products' ? <tr key={row.id}><td>{clean(row.priority_rank)}</td><td><Stack primary={row.product_name} secondary={row.research_lane || row.product_family} /></td><td><Stack primary={row.exact_sku} secondary={row.product_spec} /></td><td><Badge value={row.proof_status} /></td><td>{pct(row.gross_margin_pct)}</td><td>{money(row.volza_landed_cost_inr || row.landed_cost_model_inr)}</td><td><Badge value={row.verdict} /></td></tr> : <tr key={row.id}><td><Stack primary={row.product_or_sku} secondary={row.brand} /></td><td>{row.hs8}</td><td>{row.product_family}</td><td><Badge value={row.evidence_status} /></td><td><Badge value={row.unit_gate_status} /></td><td><Badge value={row.margin_gate_status} /></td><td><Badge value={row.preliminary_verdict} /></td></tr>)}</tbody></table></div></section>;
+function Control({ data }) {
+  const counts = useMemo(() => Object.fromEntries(data.phase1Counts.map((row) => [row.metric, Number(row.rows || 0)])), [data.phase1Counts]);
+  const blocked = data.finalGuardrails.filter((row) => row.guardrail_status !== 'rankable').length;
+  const rankable = data.finalGuardrails.length - blocked;
+  return <>
+    <section className="metrics">
+      <Metric label="Fresh verified pricing" value={fmt.format(counts.fresh_verified_pricing || 0)} color="green" />
+      <Metric label="Fresh evidence only" value={fmt.format(counts.fresh_evidence_only || 0)} color="blue" />
+      <Metric label="Stale pricing" value={fmt.format(counts.stale_pricing || 0)} color="amber" />
+      <Metric label="Blocked shortlist" value={fmt.format(counts.blocked_final_shortlist || 0)} color="amber" />
+      <Metric label="Rankable rows" value={fmt.format(rankable)} color="green" />
+      <Metric label="Landed suppliers" value={fmt.format(counts.landed_cost_ready_suppliers || 0)} color="green" />
+    </section>
+    <main className="split">
+      <section>
+        <div className="section-title"><h2>Plan Todo Control</h2><span>{fmt.format(data.planTodos.length)} rows</span></div>
+        <div className="table-wrap"><table><thead><tr><th>Phase</th><th>Wave</th><th>Task</th><th>Status</th><th>Verify</th><th>Blocker</th><th>Next action</th></tr></thead><tbody>{data.planTodos.map((row) => <tr key={row.id}><td><Stack primary={`${row.phase_number}. ${row.phase_name}`} secondary={row.hs4_scope} /></td><td>{clean(row.wave_number)}</td><td>{row.task_name}</td><td><Badge value={row.status} /></td><td><Badge value={row.verification_status} /></td><td>{clean(row.blocker)}</td><td>{clean(row.next_action)}</td></tr>)}</tbody></table></div>
+      </section>
+      <aside className="panel"><div className="panel-title"><span>Next Actions</span><Badge value={`${data.nextActions.length} open`} /></div><h2>Immediate Work Queue</h2><div className="mini-list">{data.nextActions.slice(0, 10).map((row) => <span key={`${row.phase_number}-${row.wave_number || 0}-${row.task_order}`}><strong>{row.phase_number}. {row.task_name}</strong>{clean(row.next_action)}</span>)}</div></aside>
+    </main>
+  </>;
+}
+
+function WaveProgress({ rows }) {
+  return <section><div className="section-title"><h2>Wave 1 HS4 Scope Progress</h2><span>{fmt.format(rows.length)} HS4 codes</span></div><div className="table-wrap"><table><thead><tr><th>HS4</th><th>HS8 scope</th><th>Researched SKUs</th><th>Unit checked</th><th>Margin usable</th><th>Buyer positive</th><th>Complete</th><th>Next action</th></tr></thead><tbody>{rows.map((row) => <tr key={row.hs4}><td><strong>{row.hs4}</strong></td><td>{fmt.format(row.hs8_codes_in_scope || 0)}</td><td>{fmt.format(row.researched_sku_rows || 0)}</td><td>{fmt.format(row.exact_unit_rechecked_products || 0)}</td><td>{fmt.format(row.margin_usable_products || 0)}</td><td>{fmt.format(row.positive_buyer_products || 0)}</td><td><Badge value={row.exact_price_research_complete ? 'complete' : 'incomplete'} /></td><td>{clean(row.next_action)}</td></tr>)}</tbody></table></div></section>;
+}
+
+function ExactUnits({ rows, suppliers }) {
+  return <main className="split"><section><div className="section-title"><h2>Exact-Unit Recheck</h2><span>{fmt.format(rows.length)} rows</span></div><div className="table-wrap"><table><thead><tr><th>SKU</th><th>HS</th><th>Required unit</th><th>Margin</th><th>Blocker</th></tr></thead><tbody>{rows.map((row) => <tr key={row.id}><td><strong>{row.product_or_sku}</strong></td><td>{row.hs8}</td><td>{clean(row.exact_unit_required)}</td><td><Badge value={row.usable_for_margin ? 'margin usable' : row.price_source_status} /></td><td>{clean(row.unit_blocker)}</td></tr>)}</tbody></table></div></section><aside className="panel"><div className="panel-title"><span>Supplier Audit</span><Badge value={`${suppliers.length} rows`} /></div><h2>Landed-Cost Gate</h2><div className="mini-list">{suppliers.slice(0, 14).map((row) => <span key={row.id}><strong>{row.supplier_name}</strong>{row.product_or_sku} | {human(row.exact_unit_status)} | {human(row.supplier_verdict)}</span>)}</div></aside></main>;
+}
+
+function Guardrails({ rows }) {
+  return <section><div className="section-title"><h2>Final Ranking Guardrail</h2><span>{fmt.format(rows.length)} rows</span></div><div className="table-wrap"><table><thead><tr><th>SKU</th><th>HS</th><th>Evidence</th><th>Unit</th><th>Margin</th><th>Buyer</th><th>Guardrail</th></tr></thead><tbody>{rows.map((row) => <tr key={`${row.validation_id}-${row.product_or_sku}`}><td><strong>{row.product_or_sku}</strong></td><td>{row.hs8}</td><td><Badge value={row.evidence_quality} /></td><td>{human(row.unit_gate_status)}</td><td>{human(row.margin_gate_status)}</td><td>{human(row.buyer_validation_status)}</td><td><Badge value={row.guardrail_status} /></td></tr>)}</tbody></table></div></section>;
+}
+
+function BuySellMap({ rows, inflow }) {
+  const [search, setSearch] = useState('');
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return rows.filter((row) => !q || [row.hs8, row.hs4, row.category_pod, row.buy_category, row.sell_category, row.target_buyer_layer, row.commodity].join(' ').toLowerCase().includes(q));
+  }, [rows, search]);
+  return <><section className="filters"><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search HS8, category, buy/sell use, buyer layer..." /><span>{fmt.format(filtered.length)} rows</span></section><main className="split buy-sell-split"><section><div className="section-title"><h2>HS Code Buy / Sell Map</h2><span>{fmt.format(filtered.length)} rows</span></div><div className="table-wrap buy-sell-table"><table><thead><tr><th>HS</th><th>Category</th><th>What to buy</th><th>How to sell</th><th>Buyer layer</th><th>Demand</th><th>Risk / gate</th><th>Next action</th></tr></thead><tbody>{filtered.map((row) => <tr key={row.hs8}><td><Stack primary={row.hs8} secondary={`${row.hs4} | ${row.research_priority || 'P3'}`} /></td><td><Stack primary={row.category_pod} secondary={row.category_label || row.commodity} /></td><td>{clean(row.buy_category)}</td><td>{clean(row.sell_category)}</td><td>{clean(row.target_buyer_layer)}</td><td><Stack primary={`${fmt.format(Number(row.unique_buyers || 0))} buyers`} secondary={`${fmt.format(Number(row.shipment_count || 0))} shipments | ${usdMn(row.val_2024_25)}`} /></td><td><Badge value={row.final_classification || row.margin_risk} /><span>{fmt.format(Number(row.researched_sku_count || 0))} researched SKU</span></td><td>{clean(row.next_action || row.latest_preliminary_verdict || 'Queue exact product research')}</td></tr>)}</tbody></table></div></section><aside className="panel"><div className="panel-title"><span>Researched SKU Inflow</span><Badge value={`${inflow.length} rows`} /></div><h2>Latest Evidence Rows</h2><div className="mini-list">{inflow.slice(0, 16).map((row) => <span key={row.id}><strong>{row.product_or_sku}</strong>{row.hs8} | {human(row.unit_gate_status)} | {human(row.margin_gate_status)}</span>)}</div></aside></main></>;
+}
+
+function SimpleTable({ title, rows }) {
+  return <section><div className="section-title"><h2>{title}</h2><span>{fmt.format(rows.length)} rows</span></div><div className="table-wrap"><table><thead><tr><th>SKU / HS</th><th>Evidence</th><th>Unit</th><th>Margin</th><th>Verdict</th></tr></thead><tbody>{rows.map((row) => <tr key={row.id}><td><Stack primary={row.product_or_sku || row.product_name || row.hs8} secondary={row.hs8} /></td><td><Badge value={row.evidence_status || row.proof_status || row.evidence_quality_status} /></td><td><Badge value={row.unit_gate_status} /></td><td><Badge value={row.margin_gate_status} /></td><td><Badge value={row.preliminary_verdict || row.verdict || row.final_classification} /></td></tr>)}</tbody></table></div></section>;
 }
 
 function App() {
   const data = useData();
-  const [tab, setTab] = useState('buySell');
-  const usable = data.evidence.filter((row) => row.evidence_quality && row.evidence_quality !== 'not_usable').length;
-  const p1 = data.buySell.filter((row) => row.research_priority === 'P1').length;
-  const marginOpen = data.buySell.filter((row) => String(row.margin_risk || row.margin_gate_status || '').toLowerCase().includes('required') || String(row.margin_gate_status || '').toLowerCase().includes('not')).length;
-  const importValue = data.buySell.reduce((sum, row) => sum + Number(row.val_2024_25 || 0), 0);
-
+  const [tab, setTab] = useState('control');
+  const buyerPositive = data.finalGuardrails.filter((row) => row.guardrail_status === 'rankable').length;
   if (data.loading) return <div className="boot">Loading live Supabase research workspace...</div>;
-
-  return <div className="app"><header><div><h1>Naresh Exim Component Research</h1><p>Supabase-first HS code, evidence, unit, margin and buyer-gate dashboard.</p></div><button onClick={data.reload}>Refresh</button></header>{data.error ? <div className="error">{data.error}</div> : null}<section className="metrics"><Metric label="HS buy/sell codes" value={fmt.format(data.buySell.length)} color="blue" /><Metric label="P1 categories" value={fmt.format(p1)} color="green" /><Metric label="SKU inflow rows" value={fmt.format(data.inflow.length)} color="green" /><Metric label="Usable evidence refs" value={fmt.format(usable)} color="green" /><Metric label="Margin open" value={fmt.format(marginOpen)} color="amber" /><Metric label="Import value" value={usdMn(importValue)} color="blue" /></section><nav><button className={tab === 'buySell' ? 'active' : ''} onClick={() => setTab('buySell')}>HS Buy/Sell Map</button><button className={tab === 'audit' ? 'active' : ''} onClick={() => setTab('audit')}>Audit Gates</button><button className={tab === 'inflow' ? 'active' : ''} onClick={() => setTab('inflow')}>Researched SKU Inflow</button><button className={tab === 'products' ? 'active' : ''} onClick={() => setTab('products')}>Validated Products</button></nav>{tab === 'buySell' ? <BuySellMap rows={data.buySell} inflow={data.inflow} /> : null}{tab === 'audit' ? <AuditGates audit={data.audit} evidence={data.evidence} unit={data.unit} spot={data.spot} rejects={data.rejects} /> : null}{tab === 'inflow' ? <SimpleTable title="Researched SKU Inflow" rows={data.inflow} /> : null}{tab === 'products' ? <SimpleTable title="Validated Products" rows={data.products} type="products" /> : null}</div>;
+  return <div className="app"><header><div><h1>Naresh Exim Component Research</h1><p>Evidence-first HS code, exact-unit, supplier, buyer and final-ranking control dashboard.</p></div><button onClick={data.reload}>Refresh</button></header>{data.error ? <div className="error">{data.error}</div> : null}<section className="metrics"><Metric label="HS buy/sell codes" value={fmt.format(data.buySell.length)} color="blue" /><Metric label="SKU inflow rows" value={fmt.format(data.inflow.length)} color="green" /><Metric label="Evidence refs" value={fmt.format(data.evidence.length)} color="green" /><Metric label="Exact-unit rows" value={fmt.format(data.exactUnits.length)} color="blue" /><Metric label="Supplier audits" value={fmt.format(data.supplierAudit.length)} color="amber" /><Metric label="Rankable rows" value={fmt.format(buyerPositive)} color="green" /></section><nav><button className={tab === 'control' ? 'active' : ''} onClick={() => setTab('control')}>Plan Control</button><button className={tab === 'wave' ? 'active' : ''} onClick={() => setTab('wave')}>Wave Progress</button><button className={tab === 'units' ? 'active' : ''} onClick={() => setTab('units')}>Exact Units</button><button className={tab === 'guardrails' ? 'active' : ''} onClick={() => setTab('guardrails')}>Guardrails</button><button className={tab === 'buySell' ? 'active' : ''} onClick={() => setTab('buySell')}>HS Buy/Sell Map</button><button className={tab === 'inflow' ? 'active' : ''} onClick={() => setTab('inflow')}>SKU Inflow</button></nav>{tab === 'control' ? <Control data={data} /> : null}{tab === 'wave' ? <WaveProgress rows={data.hs4Progress} /> : null}{tab === 'units' ? <ExactUnits rows={data.exactUnits} suppliers={data.supplierAudit} /> : null}{tab === 'guardrails' ? <Guardrails rows={data.finalGuardrails} /> : null}{tab === 'buySell' ? <BuySellMap rows={data.buySell} inflow={data.inflow} /> : null}{tab === 'inflow' ? <SimpleTable title="Researched SKU Inflow" rows={data.inflow} /> : null}</div>;
 }
 
 createRoot(document.getElementById('root')).render(<App />);
