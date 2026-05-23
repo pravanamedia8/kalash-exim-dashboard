@@ -23,6 +23,11 @@ function human(value) {
   return String(clean(value)).replaceAll('_', ' ');
 }
 
+function listText(value) {
+  if (Array.isArray(value)) return value.filter(Boolean).join(', ') || '-';
+  return clean(value);
+}
+
 function money(value) {
   if (value === null || value === undefined || value === '') return '-';
   return 'INR ' + fmt.format(Number(value));
@@ -40,6 +45,14 @@ function shortDate(value) {
 
 function rowText(row, keys) {
   return keys.map((key) => row?.[key] ?? '').join(' ').toLowerCase();
+}
+
+function scopeValues(row) {
+  const values = [];
+  if (row?.primary_hs4) values.push(String(row.primary_hs4));
+  if (Array.isArray(row?.hs4_scope)) row.hs4_scope.filter(Boolean).forEach((hs4) => values.push(String(hs4)));
+  if (!Array.isArray(row?.hs4_scope) && row?.hs4_scope) String(row.hs4_scope).split(',').map((hs4) => hs4.trim()).filter(Boolean).forEach((hs4) => values.push(hs4));
+  return Array.from(new Set(values));
 }
 
 function tone(value) {
@@ -60,6 +73,8 @@ const baseEmpty = {
   hs8Backlog: [],
   phaseWaveLog: [],
   hsBuySell: [],
+  relatedCategories: [],
+  categoryPolicy: [],
   researchedInflow: [],
   priceStatus: [],
   supplierQueue: [],
@@ -91,6 +106,10 @@ function baseQueries() {
 const tabQueries = {
   buySell: () => [
     ['hsBuySell', 'HS buy/sell map', supabase.from('component_dashboard_buy_sell_hs_codes').select('*').order('sorting_rank', { ascending: true }).limit(1200)]
+  ],
+  relatedCategories: () => [
+    ['relatedCategories', 'Related SKU category dashboard', supabase.from('component_related_sku_category_dashboard').select('*').order('priority_score', { ascending: false }).order('hs8_count', { ascending: false }).limit(300)],
+    ['categoryPolicy', 'Related SKU category policy', supabase.from('component_related_sku_category_policy').select('*').order('id', { ascending: true }).limit(50)]
   ],
   inflow: () => [
     ['researchedInflow', 'Researched SKU inflow', supabase.from('component_researched_sku_inflow').select('*').order('researched_at', { ascending: false }).limit(700)]
@@ -135,7 +154,6 @@ async function fetchSet(entries) {
     const { data, error } = await query;
     return { key, label, data: data || [], error };
   }));
-
   const next = {};
   const errors = [];
   results.forEach((result) => {
@@ -153,27 +171,15 @@ function useData() {
       setState({ ...baseEmpty, loading: false, error: 'Supabase publishable key is missing in Vercel environment.' });
       return;
     }
-
     setState((old) => ({ ...old, loading: true, error: '' }));
     const { next, errors } = await fetchSet(baseQueries());
-    setState((old) => ({
-      ...old,
-      ...next,
-      loading: false,
-      error: errors.join(' | ')
-    }));
+    setState((old) => ({ ...old, ...next, loading: false, error: errors.join(' | ') }));
   }
 
   async function loadTab(tab, force = false) {
     if (!supabase || !tabQueries[tab]) return;
     if (!force && state.loadedTabs[tab]) return;
-
-    setState((old) => ({
-      ...old,
-      loadingTabs: { ...old.loadingTabs, [tab]: true },
-      tabErrors: { ...old.tabErrors, [tab]: '' }
-    }));
-
+    setState((old) => ({ ...old, loadingTabs: { ...old.loadingTabs, [tab]: true }, tabErrors: { ...old.tabErrors, [tab]: '' } }));
     const { next, errors } = await fetchSet(tabQueries[tab]());
     setState((old) => ({
       ...old,
@@ -201,21 +207,11 @@ function Badge({ value }) {
 }
 
 function Metric({ label, value, color = '' }) {
-  return (
-    <div className={'metric ' + color}>
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </div>
-  );
+  return <div className={'metric ' + color}><span>{label}</span><strong>{value}</strong></div>;
 }
 
 function Stack({ primary, secondary }) {
-  return (
-    <div className="stack">
-      <strong>{clean(primary)}</strong>
-      {secondary ? <span>{clean(secondary)}</span> : null}
-    </div>
-  );
+  return <div className="stack"><strong>{clean(primary)}</strong>{secondary ? <span>{clean(secondary)}</span> : null}</div>;
 }
 
 function Metrics({ data }) {
@@ -225,17 +221,14 @@ function Metrics({ data }) {
   const priceGate = backlog.filter((row) => row.dashboard_status === 'has_sku_price_gate_pass_pending_supplier_landed_quote').length;
   const oneSource = backlog.filter((row) => row.dashboard_status === 'has_one_source_sku_second_source_required').length;
   const zeroSource = backlog.filter((row) => row.dashboard_status === 'has_sku_but_no_usable_b2b_exact_price').length;
-
-  return (
-    <section className="metrics">
-      <Metric label="HS8 pricing backlog" value={fmt.format(backlog.length)} color="blue" />
-      <Metric label="Need SKU selection" value={fmt.format(needSku)} color="amber" />
-      <Metric label="Price gate open" value={fmt.format(priceGate)} color="green" />
-      <Metric label="One-source rows" value={fmt.format(oneSource)} color="amber" />
-      <Metric label="Zero-source rows" value={fmt.format(zeroSource)} color="bad" />
-      <Metric label="Fresh verified pricing" value={fmt.format(counts.fresh_verified_pricing || 0)} color="green" />
-    </section>
-  );
+  return <section className="metrics">
+    <Metric label="HS8 pricing backlog" value={fmt.format(backlog.length)} color="blue" />
+    <Metric label="Need SKU selection" value={fmt.format(needSku)} color="amber" />
+    <Metric label="Price gate open" value={fmt.format(priceGate)} color="green" />
+    <Metric label="One-source rows" value={fmt.format(oneSource)} color="amber" />
+    <Metric label="Zero-source rows" value={fmt.format(zeroSource)} color="bad" />
+    <Metric label="Fresh verified pricing" value={fmt.format(counts.fresh_verified_pricing || 0)} color="green" />
+  </section>;
 }
 
 function LoadingOrError({ loading, error }) {
@@ -246,78 +239,20 @@ function LoadingOrError({ loading, error }) {
 
 function Control({ data }) {
   const openTodos = data.planTodos.filter((row) => !['completed', 'verified_complete'].includes(row.status));
-  return (
-    <>
-      <Metrics data={data} />
-      <main className="split">
-        <section>
-          <div className="section-title"><h2>Phase And Wave Plan Control</h2><span>{fmt.format(data.planTodos.length)} rows</span></div>
-          <div className="table-wrap">
-            <table>
-              <thead><tr><th>Phase</th><th>Wave</th><th>Task</th><th>Status</th><th>Verify</th><th>Blocker</th><th>Next action</th></tr></thead>
-              <tbody>
-                {data.planTodos.map((row) => (
-                  <tr key={row.id}>
-                    <td><Stack primary={`${row.phase_number}. ${row.phase_name}`} secondary={row.hs4_scope} /></td>
-                    <td>{clean(row.wave_number)}</td>
-                    <td>{clean(row.task_name)}</td>
-                    <td><Badge value={row.status} /></td>
-                    <td><Badge value={row.verification_status} /></td>
-                    <td>{clean(row.blocker)}</td>
-                    <td>{clean(row.next_action)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-        <aside className="panel">
-          <div className="panel-title"><span>Immediate Queue</span><Badge value={`${openTodos.length} open`} /></div>
-          <h2>Next Actions</h2>
-          <div className="mini-list">
-            {data.nextActions.slice(0, 16).map((row) => (
-              <span key={`${row.phase_number}-${row.wave_number || 0}-${row.task_order}`}>
-                <strong>{row.phase_number}. {clean(row.task_name)}</strong>
-                {clean(row.next_action)}
-              </span>
-            ))}
-          </div>
-          <div className="mini-list">
-            {data.phaseWaveLog.slice(0, 5).map((row) => (
-              <span key={row.id}><strong>{clean(row.status)}</strong>{shortDate(row.created_at)} | {clean(row.notes)}</span>
-            ))}
-          </div>
-        </aside>
-      </main>
-    </>
-  );
+  return <>
+    <Metrics data={data} />
+    <main className="split">
+      <section>
+        <div className="section-title"><h2>Phase And Wave Plan Control</h2><span>{fmt.format(data.planTodos.length)} rows</span></div>
+        <div className="table-wrap"><table><thead><tr><th>Phase</th><th>Wave</th><th>Task</th><th>Status</th><th>Verify</th><th>Blocker</th><th>Next action</th></tr></thead><tbody>{data.planTodos.map((row) => <tr key={row.id}><td><Stack primary={`${row.phase_number}. ${row.phase_name}`} secondary={row.hs4_scope} /></td><td>{clean(row.wave_number)}</td><td>{clean(row.task_name)}</td><td><Badge value={row.status} /></td><td><Badge value={row.verification_status} /></td><td>{clean(row.blocker)}</td><td>{clean(row.next_action)}</td></tr>)}</tbody></table></div>
+      </section>
+      <aside className="panel"><div className="panel-title"><span>Immediate Queue</span><Badge value={`${openTodos.length} open`} /></div><h2>Next Actions</h2><div className="mini-list">{data.nextActions.slice(0, 16).map((row) => <span key={`${row.phase_number}-${row.wave_number || 0}-${row.task_order}`}><strong>{row.phase_number}. {clean(row.task_name)}</strong>{clean(row.next_action)}</span>)}</div><div className="mini-list">{data.phaseWaveLog.slice(0, 5).map((row) => <span key={row.id}><strong>{clean(row.status)}</strong>{shortDate(row.created_at)} | {clean(row.notes)}</span>)}</div></aside>
+    </main>
+  </>;
 }
 
 function WaveProgress({ rows }) {
-  return (
-    <section>
-      <div className="section-title"><h2>Wave HS4 Scope Progress</h2><span>{fmt.format(rows.length)} HS4 codes</span></div>
-      <div className="table-wrap">
-        <table>
-          <thead><tr><th>HS4</th><th>HS8 scope</th><th>Researched SKUs</th><th>Unit checked</th><th>Margin usable</th><th>Buyer positive</th><th>Complete</th><th>Next action</th></tr></thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr key={row.hs4}>
-                <td><strong>{row.hs4}</strong></td>
-                <td>{fmt.format(n(row.hs8_codes_in_scope))}</td>
-                <td>{fmt.format(n(row.researched_sku_rows))}</td>
-                <td>{fmt.format(n(row.exact_unit_rechecked_products))}</td>
-                <td>{fmt.format(n(row.margin_usable_products))}</td>
-                <td>{fmt.format(n(row.positive_buyer_products))}</td>
-                <td><Badge value={row.exact_price_research_complete ? 'complete' : 'incomplete'} /></td>
-                <td>{clean(row.next_action)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  );
+  return <section><div className="section-title"><h2>Wave HS4 Scope Progress</h2><span>{fmt.format(rows.length)} HS4 codes</span></div><div className="table-wrap"><table><thead><tr><th>HS4</th><th>HS8 scope</th><th>Researched SKUs</th><th>Unit checked</th><th>Margin usable</th><th>Buyer positive</th><th>Complete</th><th>Next action</th></tr></thead><tbody>{rows.map((row) => <tr key={row.hs4}><td><strong>{row.hs4}</strong></td><td>{fmt.format(n(row.hs8_codes_in_scope))}</td><td>{fmt.format(n(row.researched_sku_rows))}</td><td>{fmt.format(n(row.exact_unit_rechecked_products))}</td><td>{fmt.format(n(row.margin_usable_products))}</td><td>{fmt.format(n(row.positive_buyer_products))}</td><td><Badge value={row.exact_price_research_complete ? 'complete' : 'incomplete'} /></td><td>{clean(row.next_action)}</td></tr>)}</tbody></table></div></section>;
 }
 
 function Hs8Backlog({ rows }) {
@@ -341,58 +276,18 @@ function Hs8Backlog({ rows }) {
     if (filters.sort === 'blocked') return copy.sort((a, b) => n(b.rejection_rows) - n(a.rejection_rows) || n(b.zero_source_sku_rows) - n(a.zero_source_sku_rows));
     return copy.sort((a, b) => n(a.wave_number) - n(b.wave_number) || n(a.research_priority) - n(b.research_priority));
   }, [rows, filters]);
-
-  return (
-    <>
-      <section className="filters wide">
-        <input value={filters.search} onChange={(event) => setFilters({ ...filters, search: event.target.value })} placeholder="Search HS8, HS4, product, blocker, action..." />
-        <select value={filters.wave} onChange={(event) => setFilters({ ...filters, wave: event.target.value })}>
-          <option value="ALL">All waves</option>
-          {waves.map((wave) => <option key={wave} value={String(wave)}>Wave {wave}</option>)}
-        </select>
-        <select value={filters.hs4} onChange={(event) => setFilters({ ...filters, hs4: event.target.value })}>
-          <option value="ALL">All HS4</option>
-          {hs4s.map((hs4) => <option key={hs4} value={hs4}>{hs4}</option>)}
-        </select>
-        <select value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value })}>
-          <option value="ALL">All status</option>
-          {statuses.map((status) => <option key={status} value={status}>{human(status)}</option>)}
-        </select>
-        <select value={filters.sort} onChange={(event) => setFilters({ ...filters, sort: event.target.value })}>
-          <option value="priority">Plan priority</option>
-          <option value="import">Import value high</option>
-          <option value="buyers">Buyer count high</option>
-          <option value="sources">Source strength high</option>
-          <option value="blocked">Blocked/revisit high</option>
-        </select>
-        <span>{fmt.format(filtered.length)} / {fmt.format(rows.length)} rows</span>
-        <button type="button" onClick={() => setFilters({ search: '', wave: 'ALL', hs4: 'ALL', status: 'ALL', sort: 'priority' })}>Reset</button>
-      </section>
-      <section>
-        <div className="section-title"><h2>HS8 Pricing Backlog</h2><span>{fmt.format(filtered.length)} HS8 rows</span></div>
-        <div className="table-wrap buy-sell-table">
-          <table>
-            <thead><tr><th>HS</th><th>Category</th><th>Wave</th><th>Market signal</th><th>SKU gate</th><th>Pricing evidence</th><th>Status</th><th>Blocker</th><th>Next action</th></tr></thead>
-            <tbody>
-              {filtered.map((row) => (
-                <tr key={`${row.hs8}-${row.wave_number}`}>
-                  <td><Stack primary={row.hs8} secondary={`HS4 ${row.hs4}`} /></td>
-                  <td><Stack primary={row.commodity} secondary={human(row.pricing_wave)} /></td>
-                  <td><Stack primary={`Wave ${clean(row.wave_number)}`} secondary={`Priority ${fmt.format(n(row.research_priority))}`} /></td>
-                  <td><Stack primary={usdMn(row.val_2024_25)} secondary={`${fmt.format(n(row.unique_buyers))} buyers / ${fmt.format(n(row.unique_shippers))} shippers`} /></td>
-                  <td><Stack primary={`${fmt.format(n(row.two_plus_sku_rows))} pass / ${fmt.format(n(row.one_source_sku_rows))} one / ${fmt.format(n(row.zero_source_sku_rows))} zero`} secondary={`${fmt.format(n(row.sku_queue_rows))} SKU queue rows`} /></td>
-                  <td><Stack primary={`${fmt.format(n(row.usable_price_evidence_rows))} usable / ${fmt.format(n(row.blocked_price_evidence_rows))} blocked`} secondary={`${money(row.min_b2b_price_inr)} - ${money(row.max_b2b_price_inr)}`} /></td>
-                  <td><Badge value={row.dashboard_status} /></td>
-                  <td>{clean(row.current_blocker)}</td>
-                  <td>{clean(row.next_action)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
-    </>
-  );
+  return <>
+    <section className="filters wide">
+      <input value={filters.search} onChange={(event) => setFilters({ ...filters, search: event.target.value })} placeholder="Search HS8, HS4, product, blocker, action..." />
+      <select value={filters.wave} onChange={(event) => setFilters({ ...filters, wave: event.target.value })}><option value="ALL">All waves</option>{waves.map((wave) => <option key={wave} value={String(wave)}>Wave {wave}</option>)}</select>
+      <select value={filters.hs4} onChange={(event) => setFilters({ ...filters, hs4: event.target.value })}><option value="ALL">All HS4</option>{hs4s.map((hs4) => <option key={hs4} value={hs4}>{hs4}</option>)}</select>
+      <select value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value })}><option value="ALL">All status</option>{statuses.map((status) => <option key={status} value={status}>{human(status)}</option>)}</select>
+      <select value={filters.sort} onChange={(event) => setFilters({ ...filters, sort: event.target.value })}><option value="priority">Plan priority</option><option value="import">Import value high</option><option value="buyers">Buyer count high</option><option value="sources">Source strength high</option><option value="blocked">Blocked/revisit high</option></select>
+      <span>{fmt.format(filtered.length)} / {fmt.format(rows.length)} rows</span>
+      <button type="button" onClick={() => setFilters({ search: '', wave: 'ALL', hs4: 'ALL', status: 'ALL', sort: 'priority' })}>Reset</button>
+    </section>
+    <section><div className="section-title"><h2>HS8 Pricing Backlog</h2><span>{fmt.format(filtered.length)} HS8 rows</span></div><div className="table-wrap buy-sell-table"><table><thead><tr><th>HS</th><th>Category</th><th>Wave</th><th>Market signal</th><th>SKU gate</th><th>Pricing evidence</th><th>Status</th><th>Blocker</th><th>Next action</th></tr></thead><tbody>{filtered.map((row) => <tr key={`${row.hs8}-${row.wave_number}`}><td><Stack primary={row.hs8} secondary={`HS4 ${row.hs4}`} /></td><td><Stack primary={row.commodity} secondary={human(row.pricing_wave)} /></td><td><Stack primary={`Wave ${clean(row.wave_number)}`} secondary={`Priority ${fmt.format(n(row.research_priority))}`} /></td><td><Stack primary={usdMn(row.val_2024_25)} secondary={`${fmt.format(n(row.unique_buyers))} buyers / ${fmt.format(n(row.unique_shippers))} shippers`} /></td><td><Stack primary={`${fmt.format(n(row.two_plus_sku_rows))} pass / ${fmt.format(n(row.one_source_sku_rows))} one / ${fmt.format(n(row.zero_source_sku_rows))} zero`} secondary={`${fmt.format(n(row.sku_queue_rows))} SKU queue rows`} /></td><td><Stack primary={`${fmt.format(n(row.usable_price_evidence_rows))} usable / ${fmt.format(n(row.blocked_price_evidence_rows))} blocked`} secondary={`${money(row.min_b2b_price_inr)} - ${money(row.max_b2b_price_inr)}`} /></td><td><Badge value={row.dashboard_status} /></td><td>{clean(row.current_blocker)}</td><td>{clean(row.next_action)}</td></tr>)}</tbody></table></div></section>
+  </>;
 }
 
 function BuySellMap({ rows }) {
@@ -413,53 +308,49 @@ function BuySellMap({ rows }) {
     if (filters.sort === 'value') return copy.sort((a, b) => n(b.val_2024_25) - n(a.val_2024_25));
     return copy.sort((a, b) => n(a.sorting_rank) - n(b.sorting_rank));
   }, [rows, filters]);
+  return <>
+    <section className="filters wide"><input value={filters.search} onChange={(event) => setFilters({ ...filters, search: event.target.value })} placeholder="Search HS8, buy category, sell use, buyer layer..." /><select value={filters.hs4} onChange={(event) => setFilters({ ...filters, hs4: event.target.value })}><option value="ALL">All HS4</option>{hs4s.map((hs4) => <option key={hs4} value={hs4}>{hs4}</option>)}</select><select value={filters.category} onChange={(event) => setFilters({ ...filters, category: event.target.value })}><option value="ALL">All categories</option>{categories.map((category) => <option key={category} value={category}>{category}</option>)}</select><select value={filters.sort} onChange={(event) => setFilters({ ...filters, sort: event.target.value })}><option value="priority">Plan priority</option><option value="buyers">Buyer count high</option><option value="shipments">Shipments high</option><option value="value">Import value high</option></select><span>{fmt.format(filtered.length)} / {fmt.format(rows.length)} rows</span><span /><button type="button" onClick={() => setFilters({ search: '', hs4: 'ALL', category: 'ALL', sort: 'priority' })}>Reset</button></section>
+    <section><div className="section-title"><h2>HS Code Buy / Sell Map</h2><span>{fmt.format(filtered.length)} rows</span></div><div className="table-wrap buy-sell-table"><table><thead><tr><th>HS</th><th>Category</th><th>What to buy</th><th>How to sell</th><th>Buyer layer</th><th>Demand</th><th>Risk / gate</th><th>Next action</th></tr></thead><tbody>{filtered.map((row) => <tr key={row.hs8}><td><Stack primary={row.hs8} secondary={`${row.hs4} | ${row.research_priority || 'P3'}`} /></td><td><Stack primary={row.category_pod || row.category_label} secondary={row.commodity} /></td><td>{clean(row.buy_category)}</td><td>{clean(row.sell_category)}</td><td>{clean(row.target_buyer_layer)}</td><td><Stack primary={`${fmt.format(n(row.unique_buyers))} buyers`} secondary={`${fmt.format(n(row.shipment_count))} shipments | ${usdMn(row.val_2024_25)}`} /></td><td><Badge value={row.final_classification || row.margin_risk} /><span>{fmt.format(n(row.researched_sku_count))} researched SKU</span></td><td>{clean(row.next_action || row.latest_preliminary_verdict || 'Queue exact product research')}</td></tr>)}</tbody></table></div></section>
+  </>;
+}
 
-  return (
-    <>
-      <section className="filters wide">
-        <input value={filters.search} onChange={(event) => setFilters({ ...filters, search: event.target.value })} placeholder="Search HS8, buy category, sell use, buyer layer..." />
-        <select value={filters.hs4} onChange={(event) => setFilters({ ...filters, hs4: event.target.value })}>
-          <option value="ALL">All HS4</option>
-          {hs4s.map((hs4) => <option key={hs4} value={hs4}>{hs4}</option>)}
-        </select>
-        <select value={filters.category} onChange={(event) => setFilters({ ...filters, category: event.target.value })}>
-          <option value="ALL">All categories</option>
-          {categories.map((category) => <option key={category} value={category}>{category}</option>)}
-        </select>
-        <select value={filters.sort} onChange={(event) => setFilters({ ...filters, sort: event.target.value })}>
-          <option value="priority">Plan priority</option>
-          <option value="buyers">Buyer count high</option>
-          <option value="shipments">Shipments high</option>
-          <option value="value">Import value high</option>
-        </select>
-        <span>{fmt.format(filtered.length)} / {fmt.format(rows.length)} rows</span>
-        <span />
-        <button type="button" onClick={() => setFilters({ search: '', hs4: 'ALL', category: 'ALL', sort: 'priority' })}>Reset</button>
-      </section>
-      <section>
-        <div className="section-title"><h2>HS Code Buy / Sell Map</h2><span>{fmt.format(filtered.length)} rows</span></div>
-        <div className="table-wrap buy-sell-table">
-          <table>
-            <thead><tr><th>HS</th><th>Category</th><th>What to buy</th><th>How to sell</th><th>Buyer layer</th><th>Demand</th><th>Risk / gate</th><th>Next action</th></tr></thead>
-            <tbody>
-              {filtered.map((row) => (
-                <tr key={row.hs8}>
-                  <td><Stack primary={row.hs8} secondary={`${row.hs4} | ${row.research_priority || 'P3'}`} /></td>
-                  <td><Stack primary={row.category_pod || row.category_label} secondary={row.commodity} /></td>
-                  <td>{clean(row.buy_category)}</td>
-                  <td>{clean(row.sell_category)}</td>
-                  <td>{clean(row.target_buyer_layer)}</td>
-                  <td><Stack primary={`${fmt.format(n(row.unique_buyers))} buyers`} secondary={`${fmt.format(n(row.shipment_count))} shipments | ${usdMn(row.val_2024_25)}`} /></td>
-                  <td><Badge value={row.final_classification || row.margin_risk} /><span>{fmt.format(n(row.researched_sku_count))} researched SKU</span></td>
-                  <td>{clean(row.next_action || row.latest_preliminary_verdict || 'Queue exact product research')}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
-    </>
-  );
+function RelatedSkuCategories({ rows, policies }) {
+  const [filters, setFilters] = useState({ search: '', type: 'ALL', wave: 'ALL', hs4: 'ALL', readiness: 'ALL', sort: 'priority' });
+  const types = useMemo(() => Array.from(new Set(rows.map((row) => row.category_type).filter(Boolean))).sort(), [rows]);
+  const waves = useMemo(() => Array.from(new Set(rows.map((row) => row.research_wave).filter(Boolean))).sort(), [rows]);
+  const readiness = useMemo(() => Array.from(new Set(rows.map((row) => row.category_readiness || row.status).filter(Boolean))).sort(), [rows]);
+  const hs4s = useMemo(() => Array.from(new Set(rows.flatMap((row) => scopeValues(row)))).sort(), [rows]);
+  const filtered = useMemo(() => {
+    const q = filters.search.trim().toLowerCase();
+    const result = rows.filter((row) => {
+      const ready = row.category_readiness || row.status;
+      if (filters.type !== 'ALL' && row.category_type !== filters.type) return false;
+      if (filters.wave !== 'ALL' && row.research_wave !== filters.wave) return false;
+      if (filters.hs4 !== 'ALL' && !scopeValues(row).includes(filters.hs4)) return false;
+      if (filters.readiness !== 'ALL' && ready !== filters.readiness) return false;
+      if (!q) return true;
+      return rowText(row, ['category_code', 'category_name', 'category_family', 'category_type', 'primary_hs4', 'option_logic', 'target_buyer_layer', 'india_b2b_use_case', 'scale_reason', 'pricing_gate_policy', 'buyer_offer_mode', 'compliance_watch', 'category_readiness', 'next_action']).includes(q) || listText(row.hs4_scope).toLowerCase().includes(q) || listText(row.related_sku_examples).toLowerCase().includes(q) || listText(row.linked_category_pods).toLowerCase().includes(q);
+    });
+    const copy = [...result];
+    if (filters.sort === 'buyers') return copy.sort((a, b) => n(b.unique_buyers) - n(a.unique_buyers));
+    if (filters.sort === 'value') return copy.sort((a, b) => n(b.import_value_usd_mn) - n(a.import_value_usd_mn));
+    if (filters.sort === 'sku_depth') return copy.sort((a, b) => n(b.researched_sku_rows) - n(a.researched_sku_rows) || n(b.exact_sku_rows) - n(a.exact_sku_rows));
+    if (filters.sort === 'usable_price') return copy.sort((a, b) => n(b.usable_b2b_price_rows) - n(a.usable_b2b_price_rows) || n(b.two_plus_source_sku_rows) - n(a.two_plus_source_sku_rows));
+    if (filters.sort === 'blocked') return copy.sort((a, b) => n(b.blocked_price_rows) - n(a.blocked_price_rows) || n(b.zero_source_sku_rows) - n(a.zero_source_sku_rows));
+    return copy.sort((a, b) => n(b.priority_score) - n(a.priority_score) || n(b.hs8_count) - n(a.hs8_count));
+  }, [rows, filters]);
+  const totals = useMemo(() => ({
+    usable: filtered.reduce((sum, row) => sum + n(row.usable_b2b_price_rows), 0),
+    exact: filtered.reduce((sum, row) => sum + n(row.exact_sku_rows), 0),
+    twoPlus: filtered.reduce((sum, row) => sum + n(row.two_plus_source_sku_rows), 0),
+    blocked: filtered.reduce((sum, row) => sum + n(row.blocked_price_rows), 0),
+    quoteQueue: filtered.reduce((sum, row) => sum + n(row.supplier_quote_queue_rows), 0)
+  }), [filtered]);
+  return <>
+    <section className="metrics"><Metric label="Related category ranges" value={fmt.format(filtered.length)} color="blue" /><Metric label="Exact SKU rows" value={fmt.format(totals.exact)} color="green" /><Metric label="Usable B2B prices" value={fmt.format(totals.usable)} color="green" /><Metric label="Two-source SKUs" value={fmt.format(totals.twoPlus)} color="blue" /><Metric label="Blocked prices" value={fmt.format(totals.blocked)} color="bad" /><Metric label="Supplier quote queue" value={fmt.format(totals.quoteQueue)} color="amber" /></section>
+    <section className="filters wide"><input value={filters.search} onChange={(event) => setFilters({ ...filters, search: event.target.value })} placeholder="Search category, SKU example, buyer layer, gate, next action..." /><select value={filters.type} onChange={(event) => setFilters({ ...filters, type: event.target.value })}><option value="ALL">All category types</option>{types.map((type) => <option key={type} value={type}>{human(type)}</option>)}</select><select value={filters.wave} onChange={(event) => setFilters({ ...filters, wave: event.target.value })}><option value="ALL">All waves</option>{waves.map((wave) => <option key={wave} value={wave}>{human(wave)}</option>)}</select><select value={filters.hs4} onChange={(event) => setFilters({ ...filters, hs4: event.target.value })}><option value="ALL">All HS4 scope</option>{hs4s.map((hs4) => <option key={hs4} value={hs4}>{hs4}</option>)}</select><select value={filters.readiness} onChange={(event) => setFilters({ ...filters, readiness: event.target.value })}><option value="ALL">All readiness</option>{readiness.map((item) => <option key={item} value={item}>{human(item)}</option>)}</select><select value={filters.sort} onChange={(event) => setFilters({ ...filters, sort: event.target.value })}><option value="priority">Priority high</option><option value="buyers">Buyer count high</option><option value="value">Import value high</option><option value="sku_depth">SKU depth high</option><option value="usable_price">Usable B2B price high</option><option value="blocked">Blocked price high</option></select><span>{fmt.format(filtered.length)} / {fmt.format(rows.length)} rows</span><button type="button" onClick={() => setFilters({ search: '', type: 'ALL', wave: 'ALL', hs4: 'ALL', readiness: 'ALL', sort: 'priority' })}>Reset</button></section>
+    <main className="split"><section><div className="section-title"><h2>Related SKU Category Ranges</h2><span>{fmt.format(filtered.length)} ranges</span></div><div className="table-wrap buy-sell-table"><table><thead><tr><th>Category</th><th>Type / wave</th><th>HS scope</th><th>Related SKU options</th><th>Buyer use</th><th>Market signal</th><th>SKU / price gate</th><th>Readiness</th><th>Next action</th></tr></thead><tbody>{filtered.map((row) => <tr key={row.category_code}><td><Stack primary={row.category_name} secondary={row.category_family} /></td><td><Stack primary={human(row.category_type)} secondary={human(row.research_wave)} /></td><td><Stack primary={`Primary ${clean(row.primary_hs4)}`} secondary={listText(row.hs4_scope)} /></td><td><Stack primary={listText(row.related_sku_examples)} secondary={row.option_logic} /></td><td><Stack primary={row.target_buyer_layer} secondary={row.india_b2b_use_case} /></td><td><Stack primary={`${fmt.format(n(row.unique_buyers))} buyers | ${usdMn(row.import_value_usd_mn)}`} secondary={`${fmt.format(n(row.shipment_count))} shipments / ${fmt.format(n(row.hs8_count))} HS8`} /></td><td><Stack primary={`${fmt.format(n(row.exact_sku_rows))} exact SKU / ${fmt.format(n(row.usable_b2b_price_rows))} usable B2B`} secondary={`${fmt.format(n(row.two_plus_source_sku_rows))} two-source / ${fmt.format(n(row.zero_source_sku_rows))} zero-source`} /></td><td><Badge value={row.category_readiness || row.status} /></td><td><Stack primary={row.next_action} secondary={row.pricing_gate_policy} /></td></tr>)}</tbody></table></div></section><aside className="panel"><div className="panel-title"><span>Category Policy</span><Badge value={`${policies.length} rules`} /></div><h2>Scaling Rules</h2><div className="mini-list">{policies.map((row) => <span key={row.id}><strong>{clean(row.policy_name)}</strong>Allowed: {clean(row.allowed_use)}<br />Gate: {clean(row.required_gate)}<br />Blocked: {clean(row.forbidden_use)}</span>)}</div></aside></main>
+  </>;
 }
 
 function PriceStatus({ rows }) {
@@ -478,191 +369,57 @@ function PriceStatus({ rows }) {
     if (filters.sort === 'price') return copy.sort((a, b) => n(a.market_price_inr) - n(b.market_price_inr));
     return copy;
   }, [rows, filters]);
-
-  return (
-    <>
-      <section className="filters wide">
-        <input value={filters.search} onChange={(event) => setFilters({ ...filters, search: event.target.value })} placeholder="Search SKU, HS8, source, evidence, blocker..." />
-        <select value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value })}>
-          <option value="ALL">All evidence</option>
-          {statuses.map((status) => <option key={status} value={status}>{human(status)}</option>)}
-        </select>
-        <select value={filters.sort} onChange={(event) => setFilters({ ...filters, sort: event.target.value })}>
-          <option value="checked">Latest checked</option>
-          <option value="usable">Usable first</option>
-          <option value="price">Price low</option>
-        </select>
-        <span>{fmt.format(filtered.length)} / {fmt.format(rows.length)} rows</span>
-        <span />
-        <span />
-        <button type="button" onClick={() => setFilters({ search: '', status: 'ALL', sort: 'checked' })}>Reset</button>
-      </section>
-      <section>
-        <div className="section-title"><h2>Price Research Status</h2><span>{fmt.format(filtered.length)} rows</span></div>
-        <div className="table-wrap">
-          <table>
-            <thead><tr><th>SKU</th><th>HS</th><th>Source</th><th>Price</th><th>Evidence</th><th>Unit</th><th>Margin usable</th><th>Final</th><th>Blocker</th></tr></thead>
-            <tbody>
-              {filtered.map((row) => (
-                <tr key={row.id}>
-                  <td><Stack primary={row.product_or_sku} secondary={shortDate(row.checked_at)} /></td>
-                  <td>{clean(row.hs8)}</td>
-                  <td><Stack primary={row.source_name} secondary={row.source_url} /></td>
-                  <td><Stack primary={money(row.market_price_inr || row.price_inr || row.b2b_price_inr)} secondary={human(row.price_kind)} /></td>
-                  <td><Badge value={row.evidence_quality || row.freshness_status} /></td>
-                  <td>{human(row.unit_status)}</td>
-                  <td><Badge value={row.margin_usable ? 'margin_usable' : 'not_margin_usable'} /></td>
-                  <td><Badge value={row.final_ranking_allowed ? 'ranking_allowed' : 'ranking_blocked'} /></td>
-                  <td>{clean(row.blocker)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
-    </>
-  );
+  return <><section className="filters wide"><input value={filters.search} onChange={(event) => setFilters({ ...filters, search: event.target.value })} placeholder="Search SKU, HS8, source, evidence, blocker..." /><select value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value })}><option value="ALL">All evidence</option>{statuses.map((status) => <option key={status} value={status}>{human(status)}</option>)}</select><select value={filters.sort} onChange={(event) => setFilters({ ...filters, sort: event.target.value })}><option value="checked">Latest checked</option><option value="usable">Usable first</option><option value="price">Price low</option></select><span>{fmt.format(filtered.length)} / {fmt.format(rows.length)} rows</span><span /><span /><button type="button" onClick={() => setFilters({ search: '', status: 'ALL', sort: 'checked' })}>Reset</button></section><section><div className="section-title"><h2>Price Research Status</h2><span>{fmt.format(filtered.length)} rows</span></div><div className="table-wrap"><table><thead><tr><th>SKU</th><th>HS</th><th>Source</th><th>Price</th><th>Evidence</th><th>Unit</th><th>Margin usable</th><th>Final</th><th>Blocker</th></tr></thead><tbody>{filtered.map((row) => <tr key={row.id}><td><Stack primary={row.product_or_sku} secondary={shortDate(row.checked_at)} /></td><td>{clean(row.hs8)}</td><td><Stack primary={row.source_name} secondary={row.source_url} /></td><td><Stack primary={money(row.market_price_inr || row.price_inr || row.b2b_price_inr)} secondary={human(row.price_kind)} /></td><td><Badge value={row.evidence_quality || row.freshness_status} /></td><td>{human(row.unit_status)}</td><td><Badge value={row.margin_usable ? 'margin_usable' : 'not_margin_usable'} /></td><td><Badge value={row.final_ranking_allowed ? 'ranking_allowed' : 'ranking_blocked'} /></td><td>{clean(row.blocker)}</td></tr>)}</tbody></table></div></section></>;
 }
 
 function SupplierQueue({ rows }) {
-  return (
-    <section>
-      <div className="section-title"><h2>Supplier Landed Quote Queue</h2><span>{fmt.format(rows.length)} rows</span></div>
-      <div className="table-wrap">
-        <table>
-          <thead><tr><th>HS / Product</th><th>Wave</th><th>Source coverage</th><th>Best B2B price</th><th>Quote priority</th><th>Blocker</th><th>Next action</th></tr></thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr key={`${row.hs8}-${row.product_or_sku || row.commodity}`}>
-                <td><Stack primary={row.product_or_sku || row.commodity || row.hs8} secondary={`${clean(row.hs8)} | HS4 ${clean(row.hs4)}`} /></td>
-                <td>{human(row.pricing_wave)}</td>
-                <td><Stack primary={`${fmt.format(n(row.b2b_source_price_rows || row.usable_price_evidence_rows))} usable sources`} secondary={`${fmt.format(n(row.blocked_price_rows || row.blocked_price_evidence_rows))} blocked`} /></td>
-                <td>{money(row.best_b2b_price_inr || row.min_b2b_price_inr)}</td>
-                <td><Badge value={row.quote_priority || row.dashboard_status} /></td>
-                <td>{clean(row.current_blocker || row.blocker)}</td>
-                <td>{clean(row.next_action)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  );
+  return <section><div className="section-title"><h2>Supplier Landed Quote Queue</h2><span>{fmt.format(rows.length)} rows</span></div><div className="table-wrap"><table><thead><tr><th>HS / Product</th><th>Wave</th><th>Source coverage</th><th>Best B2B price</th><th>Quote priority</th><th>Blocker</th><th>Next action</th></tr></thead><tbody>{rows.map((row) => <tr key={`${row.hs8}-${row.product_or_sku || row.commodity}`}><td><Stack primary={row.product_or_sku || row.commodity || row.hs8} secondary={`${clean(row.hs8)} | HS4 ${clean(row.hs4)}`} /></td><td>{human(row.pricing_wave)}</td><td><Stack primary={`${fmt.format(n(row.b2b_source_price_rows || row.usable_price_evidence_rows))} usable sources`} secondary={`${fmt.format(n(row.blocked_price_rows || row.blocked_price_evidence_rows))} blocked`} /></td><td>{money(row.best_b2b_price_inr || row.min_b2b_price_inr)}</td><td><Badge value={row.quote_priority || row.dashboard_status} /></td><td>{clean(row.current_blocker || row.blocker)}</td><td>{clean(row.next_action)}</td></tr>)}</tbody></table></div></section>;
 }
 
 function GenericTable({ title, rows, columns }) {
-  return (
-    <section>
-      <div className="section-title"><h2>{title}</h2><span>{fmt.format(rows.length)} rows</span></div>
-      <div className="table-wrap">
-        <table>
-          <thead><tr>{columns.map((column) => <th key={column.label}>{column.label}</th>)}</tr></thead>
-          <tbody>
-            {rows.map((row, index) => (
-              <tr key={row.id || row.validation_id || `${title}-${index}`}>
-                {columns.map((column) => <td key={column.label}>{column.render(row)}</td>)}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  );
+  return <section><div className="section-title"><h2>{title}</h2><span>{fmt.format(rows.length)} rows</span></div><div className="table-wrap"><table><thead><tr>{columns.map((column) => <th key={column.label}>{column.label}</th>)}</tr></thead><tbody>{rows.map((row, index) => <tr key={row.id || row.validation_id || `${title}-${index}`}>{columns.map((column) => <td key={column.label}>{column.render(row)}</td>)}</tr>)}</tbody></table></div></section>;
 }
 
 function SimpleEvidence({ title, rows }) {
-  return (
-    <GenericTable
-      title={title}
-      rows={rows}
-      columns={[
-        { label: 'SKU / HS', render: (row) => <Stack primary={row.product_or_sku || row.product_name || row.supplier_name || row.hs8} secondary={row.hs8} /> },
-        { label: 'Evidence', render: (row) => <Badge value={row.evidence_status || row.proof_status || row.evidence_quality || row.evidence_quality_status || row.supplier_verdict || row.demand_verdict || row.compliance_verdict} /> },
-        { label: 'Unit', render: (row) => human(row.unit_gate_status || row.exact_unit_status || row.unit_status || row.normalized_unit || row.supplier_unit) },
-        { label: 'Gate', render: (row) => <Badge value={row.margin_gate_status || row.deal_practicality_status || row.guardrail_status || row.ranking_status || row.preliminary_verdict || row.verdict || row.final_classification} /> },
-        { label: 'Blocker / Notes', render: (row) => clean(row.blocker || row.unit_blocker || row.notes || row.next_action || row.revisit_trigger) }
-      ]}
-    />
-  );
+  return <GenericTable title={title} rows={rows} columns={[{ label: 'SKU / HS', render: (row) => <Stack primary={row.product_or_sku || row.product_name || row.supplier_name || row.hs8} secondary={row.hs8} /> }, { label: 'Evidence', render: (row) => <Badge value={row.evidence_status || row.proof_status || row.evidence_quality || row.evidence_quality_status || row.supplier_verdict || row.demand_verdict || row.compliance_verdict} /> }, { label: 'Unit', render: (row) => human(row.unit_gate_status || row.exact_unit_status || row.unit_status || row.normalized_unit || row.supplier_unit) }, { label: 'Gate', render: (row) => <Badge value={row.margin_gate_status || row.deal_practicality_status || row.guardrail_status || row.ranking_status || row.preliminary_verdict || row.verdict || row.final_classification} /> }, { label: 'Blocker / Notes', render: (row) => clean(row.blocker || row.unit_blocker || row.notes || row.next_action || row.revisit_trigger) }]} />;
 }
 
 function Rejections({ rows }) {
-  return (
-    <GenericTable
-      title="Rejection Register"
-      rows={rows}
-      columns={[
-        { label: 'HS / SKU', render: (row) => <Stack primary={row.product_or_sku || row.hs8} secondary={`${clean(row.hs8)} | ${clean(row.hs4)}`} /> },
-        { label: 'Phase', render: (row) => clean(row.rejection_phase) },
-        { label: 'Reason', render: (row) => <Badge value={row.rejection_reason} /> },
-        { label: 'Revisit', render: (row) => <Stack primary={human(row.permanent_or_temporary)} secondary={row.revisit_trigger} /> },
-        { label: 'Updated', render: (row) => shortDate(row.updated_at) },
-        { label: 'Next action', render: (row) => clean(row.next_action || row.notes) }
-      ]}
-    />
-  );
+  return <GenericTable title="Rejection Register" rows={rows} columns={[{ label: 'HS / SKU', render: (row) => <Stack primary={row.product_or_sku || row.hs8} secondary={`${clean(row.hs8)} | ${clean(row.hs4)}`} /> }, { label: 'Phase', render: (row) => clean(row.rejection_phase) }, { label: 'Reason', render: (row) => <Badge value={row.rejection_reason} /> }, { label: 'Revisit', render: (row) => <Stack primary={human(row.permanent_or_temporary)} secondary={row.revisit_trigger} /> }, { label: 'Updated', render: (row) => shortDate(row.updated_at) }, { label: 'Next action', render: (row) => clean(row.next_action || row.notes) }]} />;
 }
 
 function App() {
   const data = useData();
   const [tab, setTab] = useState('control');
-
   useEffect(() => {
     data.loadTab(tab);
   }, [tab]);
-
   if (data.loading) return <div className="boot">Loading live Supabase research workspace...</div>;
-
   const tabLoading = Boolean(data.loadingTabs[tab]);
   const tabError = data.tabErrors[tab];
-
-  return (
-    <div className="app">
-      <header>
-        <div>
-          <h1>Naresh Exim Component Research</h1>
-          <p>Evidence-first HS code, exact-unit, supplier, buyer and final-ranking control dashboard.</p>
-        </div>
-        <button onClick={() => data.reload(tab)}>Refresh</button>
-      </header>
-      {data.error ? <div className="error">{data.error}</div> : null}
-      <nav>
-        <button className={tab === 'control' ? 'active' : ''} onClick={() => setTab('control')}>Plan Control</button>
-        <button className={tab === 'hs8Backlog' ? 'active' : ''} onClick={() => setTab('hs8Backlog')}>HS8 Pricing Backlog</button>
-        <button className={tab === 'wave' ? 'active' : ''} onClick={() => setTab('wave')}>Wave Progress</button>
-        <button className={tab === 'prices' ? 'active' : ''} onClick={() => setTab('prices')}>Price Status</button>
-        <button className={tab === 'supplierQueue' ? 'active' : ''} onClick={() => setTab('supplierQueue')}>Supplier Quote Queue</button>
-        <button className={tab === 'buySell' ? 'active' : ''} onClick={() => setTab('buySell')}>HS Buy/Sell Map</button>
-        <button className={tab === 'inflow' ? 'active' : ''} onClick={() => setTab('inflow')}>SKU Inflow</button>
-        <button className={tab === 'units' ? 'active' : ''} onClick={() => setTab('units')}>Exact Units</button>
-        <button className={tab === 'suppliers' ? 'active' : ''} onClick={() => setTab('suppliers')}>Suppliers</button>
-        <button className={tab === 'demand' ? 'active' : ''} onClick={() => setTab('demand')}>Demand</button>
-        <button className={tab === 'capital' ? 'active' : ''} onClick={() => setTab('capital')}>Capital</button>
-        <button className={tab === 'compliance' ? 'active' : ''} onClick={() => setTab('compliance')}>Compliance</button>
-        <button className={tab === 'noVolza' ? 'active' : ''} onClick={() => setTab('noVolza')}>No-Volza</button>
-        <button className={tab === 'guardrails' ? 'active' : ''} onClick={() => setTab('guardrails')}>Guardrails</button>
-        <button className={tab === 'shortlist' ? 'active' : ''} onClick={() => setTab('shortlist')}>Shortlist</button>
-        <button className={tab === 'rejections' ? 'active' : ''} onClick={() => setTab('rejections')}>Rejected/Revisit</button>
-      </nav>
-      <LoadingOrError loading={tabLoading} error={tabError} />
-      {tab === 'control' ? <Control data={data} /> : null}
-      {tab === 'hs8Backlog' ? <Hs8Backlog rows={data.hs8Backlog} /> : null}
-      {tab === 'wave' ? <WaveProgress rows={data.hs4Progress} /> : null}
-      {tab === 'prices' ? <PriceStatus rows={data.priceStatus} /> : null}
-      {tab === 'supplierQueue' ? <SupplierQueue rows={data.supplierQueue} /> : null}
-      {tab === 'buySell' ? <BuySellMap rows={data.hsBuySell} /> : null}
-      {tab === 'inflow' ? <SimpleEvidence title="Researched SKU Inflow" rows={data.researchedInflow} /> : null}
-      {tab === 'units' ? <SimpleEvidence title="Exact-Unit Recheck" rows={data.exactUnits} /> : null}
-      {tab === 'suppliers' ? <SimpleEvidence title="Supplier Verification Audit" rows={data.supplierAudit} /> : null}
-      {tab === 'demand' ? <SimpleEvidence title="Demand Verification" rows={data.demandAudit} /> : null}
-      {tab === 'capital' ? <SimpleEvidence title="Working Capital Gate" rows={data.workingCapital} /> : null}
-      {tab === 'compliance' ? <SimpleEvidence title="Compliance Audit" rows={data.complianceAudit} /> : null}
-      {tab === 'noVolza' ? <SimpleEvidence title="No-Volza Revisit Register" rows={data.noVolza} /> : null}
-      {tab === 'guardrails' ? <SimpleEvidence title="Final Ranking Guardrails" rows={data.finalGuardrails} /> : null}
-      {tab === 'shortlist' ? <SimpleEvidence title="Final Shortlist Candidates" rows={data.finalShortlist} /> : null}
-      {tab === 'rejections' ? <Rejections rows={data.rejections} /> : null}
-    </div>
-  );
+  return <div className="app">
+    <header><div><h1>Naresh Exim Component Research</h1><p>Evidence-first HS code, exact-unit, supplier, buyer and final-ranking control dashboard.</p></div><button onClick={() => data.reload(tab)}>Refresh</button></header>
+    {data.error ? <div className="error">{data.error}</div> : null}
+    <nav><button className={tab === 'control' ? 'active' : ''} onClick={() => setTab('control')}>Plan Control</button><button className={tab === 'hs8Backlog' ? 'active' : ''} onClick={() => setTab('hs8Backlog')}>HS8 Pricing Backlog</button><button className={tab === 'wave' ? 'active' : ''} onClick={() => setTab('wave')}>Wave Progress</button><button className={tab === 'prices' ? 'active' : ''} onClick={() => setTab('prices')}>Price Status</button><button className={tab === 'supplierQueue' ? 'active' : ''} onClick={() => setTab('supplierQueue')}>Supplier Quote Queue</button><button className={tab === 'buySell' ? 'active' : ''} onClick={() => setTab('buySell')}>HS Buy/Sell Map</button><button className={tab === 'relatedCategories' ? 'active' : ''} onClick={() => setTab('relatedCategories')}>Related SKU Categories</button><button className={tab === 'inflow' ? 'active' : ''} onClick={() => setTab('inflow')}>SKU Inflow</button><button className={tab === 'units' ? 'active' : ''} onClick={() => setTab('units')}>Exact Units</button><button className={tab === 'suppliers' ? 'active' : ''} onClick={() => setTab('suppliers')}>Suppliers</button><button className={tab === 'demand' ? 'active' : ''} onClick={() => setTab('demand')}>Demand</button><button className={tab === 'capital' ? 'active' : ''} onClick={() => setTab('capital')}>Capital</button><button className={tab === 'compliance' ? 'active' : ''} onClick={() => setTab('compliance')}>Compliance</button><button className={tab === 'noVolza' ? 'active' : ''} onClick={() => setTab('noVolza')}>No-Volza</button><button className={tab === 'guardrails' ? 'active' : ''} onClick={() => setTab('guardrails')}>Guardrails</button><button className={tab === 'shortlist' ? 'active' : ''} onClick={() => setTab('shortlist')}>Shortlist</button><button className={tab === 'rejections' ? 'active' : ''} onClick={() => setTab('rejections')}>Rejected/Revisit</button></nav>
+    <LoadingOrError loading={tabLoading} error={tabError} />
+    {tab === 'control' ? <Control data={data} /> : null}
+    {tab === 'hs8Backlog' ? <Hs8Backlog rows={data.hs8Backlog} /> : null}
+    {tab === 'wave' ? <WaveProgress rows={data.hs4Progress} /> : null}
+    {tab === 'prices' ? <PriceStatus rows={data.priceStatus} /> : null}
+    {tab === 'supplierQueue' ? <SupplierQueue rows={data.supplierQueue} /> : null}
+    {tab === 'buySell' ? <BuySellMap rows={data.hsBuySell} /> : null}
+    {tab === 'relatedCategories' ? <RelatedSkuCategories rows={data.relatedCategories} policies={data.categoryPolicy} /> : null}
+    {tab === 'inflow' ? <SimpleEvidence title="Researched SKU Inflow" rows={data.researchedInflow} /> : null}
+    {tab === 'units' ? <SimpleEvidence title="Exact-Unit Recheck" rows={data.exactUnits} /> : null}
+    {tab === 'suppliers' ? <SimpleEvidence title="Supplier Verification Audit" rows={data.supplierAudit} /> : null}
+    {tab === 'demand' ? <SimpleEvidence title="Demand Verification" rows={data.demandAudit} /> : null}
+    {tab === 'capital' ? <SimpleEvidence title="Working Capital Gate" rows={data.workingCapital} /> : null}
+    {tab === 'compliance' ? <SimpleEvidence title="Compliance Audit" rows={data.complianceAudit} /> : null}
+    {tab === 'noVolza' ? <SimpleEvidence title="No-Volza Revisit Register" rows={data.noVolza} /> : null}
+    {tab === 'guardrails' ? <SimpleEvidence title="Final Ranking Guardrails" rows={data.finalGuardrails} /> : null}
+    {tab === 'shortlist' ? <SimpleEvidence title="Final Shortlist Candidates" rows={data.finalShortlist} /> : null}
+    {tab === 'rejections' ? <Rejections rows={data.rejections} /> : null}
+  </div>;
 }
 
 createRoot(document.getElementById('root')).render(<App />);
