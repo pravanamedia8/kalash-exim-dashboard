@@ -87,6 +87,7 @@ const baseEmpty = {
   finalGuardrails: [],
   finalShortlist: [],
   rejections: [],
+  buyerClassifications: [],
   loadedTabs: {},
   loadingTabs: {},
   tabErrors: {}
@@ -146,6 +147,9 @@ const tabQueries = {
   ],
   rejections: () => [
     ['rejections', 'Rejection register', supabase.from('component_rejection_register').select('*').order('updated_at', { ascending: false }).limit(700)]
+  ],
+  classification: () => [
+    ['buyerClassifications', 'Buyer classifications', supabase.from('buyer_classifications').select('*').order('middleman_score', { ascending: false }).limit(2500)]
   ]
 };
 
@@ -388,6 +392,78 @@ function Rejections({ rows }) {
   return <GenericTable title="Rejection Register" rows={rows} columns={[{ label: 'HS / SKU', render: (row) => <Stack primary={row.product_or_sku || row.hs8} secondary={`${clean(row.hs8)} | ${clean(row.hs4)}`} /> }, { label: 'Phase', render: (row) => clean(row.rejection_phase) }, { label: 'Reason', render: (row) => <Badge value={row.rejection_reason} /> }, { label: 'Revisit', render: (row) => <Stack primary={human(row.permanent_or_temporary)} secondary={row.revisit_trigger} /> }, { label: 'Updated', render: (row) => shortDate(row.updated_at) }, { label: 'Next action', render: (row) => clean(row.next_action || row.notes) }]} />;
 }
 
+const CLASS_COLORS = { TRADER: '#f87171', LIKELY_TRADER: '#fb923c', AMBIGUOUS: '#fbbf24', LIKELY_MANUFACTURER: '#60a5fa', MANUFACTURER: '#34d399', CONTRACT_MANUFACTURER: '#a78bfa' };
+
+function BuyerClassification({ rows }) {
+  const [filters, setFilters] = useState({ search: '', cls: 'ALL', hs4: 'ALL', sort: 'score' });
+  const classes = useMemo(() => Array.from(new Set(rows.map((r) => r.classification).filter(Boolean))).sort(), [rows]);
+  const hs4s = useMemo(() => Array.from(new Set(rows.map((r) => r.primary_hs4).filter(Boolean))).sort(), [rows]);
+
+  const counts = useMemo(() => {
+    const m = {};
+    rows.forEach((r) => { m[r.classification] = (m[r.classification] || 0) + 1; });
+    return m;
+  }, [rows]);
+
+  const filtered = useMemo(() => {
+    const q = filters.search.trim().toLowerCase();
+    const result = rows.filter((r) => {
+      if (filters.cls !== 'ALL' && r.classification !== filters.cls) return false;
+      if (filters.hs4 !== 'ALL' && String(r.primary_hs4) !== filters.hs4) return false;
+      if (!q) return true;
+      return rowText(r, ['company_name', 'primary_hs4', 'classification', 'city', 'state', 'score_reasons']).includes(q);
+    });
+    const copy = [...result];
+    if (filters.sort === 'cif') return copy.sort((a, b) => n(b.total_cif_usd) - n(a.total_cif_usd));
+    if (filters.sort === 'shipments') return copy.sort((a, b) => n(b.shipment_count) - n(a.shipment_count));
+    if (filters.sort === 'china') return copy.sort((a, b) => n(b.china_pct) - n(a.china_pct));
+    return copy.sort((a, b) => n(b.middleman_score) - n(a.middleman_score));
+  }, [rows, filters]);
+
+  const traders = rows.filter((r) => r.classification === 'TRADER' || r.classification === 'LIKELY_TRADER').length;
+  const manufacturers = rows.filter((r) => r.classification === 'MANUFACTURER' || r.classification === 'LIKELY_MANUFACTURER').length;
+  const contract = rows.filter((r) => r.classification === 'CONTRACT_MANUFACTURER').length;
+
+  return <>
+    <section className="metrics">
+      <Metric label="Total classified" value={fmt.format(rows.length)} color="blue" />
+      <Metric label="Traders + Likely" value={fmt.format(traders)} color="bad" />
+      <Metric label="Manufacturers + Likely" value={fmt.format(manufacturers)} color="green" />
+      <Metric label="Contract Mfrs" value={fmt.format(contract)} color="amber" />
+      <Metric label="Ambiguous" value={fmt.format(counts['AMBIGUOUS'] || 0)} color="amber" />
+      <Metric label="Avg middleman score" value={fmt1.format(rows.length ? rows.reduce((s, r) => s + n(r.middleman_score), 0) / rows.length : 0)} color="blue" />
+    </section>
+    <section className="metrics">
+      {classes.map((cls) => <Metric key={cls} label={human(cls)} value={fmt.format(counts[cls] || 0)} color={cls.includes('TRADER') ? 'bad' : cls.includes('MANUFACTURER') ? 'green' : 'amber'} />)}
+    </section>
+    <section className="filters wide">
+      <input value={filters.search} onChange={(e) => setFilters({ ...filters, search: e.target.value })} placeholder="Search company, HS4, city, state, classification..." />
+      <select value={filters.cls} onChange={(e) => setFilters({ ...filters, cls: e.target.value })}><option value="ALL">All classifications</option>{classes.map((c) => <option key={c} value={c}>{human(c)}</option>)}</select>
+      <select value={filters.hs4} onChange={(e) => setFilters({ ...filters, hs4: e.target.value })}><option value="ALL">All HS4</option>{hs4s.map((h) => <option key={h} value={h}>{h}</option>)}</select>
+      <select value={filters.sort} onChange={(e) => setFilters({ ...filters, sort: e.target.value })}><option value="score">Middleman score high</option><option value="cif">CIF value high</option><option value="shipments">Shipments high</option><option value="china">China % high</option></select>
+      <span>{fmt.format(filtered.length)} / {fmt.format(rows.length)} rows</span>
+      <button type="button" onClick={() => setFilters({ search: '', cls: 'ALL', hs4: 'ALL', sort: 'score' })}>Reset</button>
+    </section>
+    <section>
+      <div className="section-title"><h2>Buyer Classifications</h2><span>{fmt.format(filtered.length)} companies</span></div>
+      <div className="table-wrap buy-sell-table">
+        <table><thead><tr><th>Company</th><th>HS4</th><th>Classification</th><th>Score</th><th>Shipments</th><th>CIF USD</th><th>China %</th><th>City / State</th><th>Reasons</th></tr></thead>
+        <tbody>{filtered.map((r, i) => <tr key={r.company_name + '-' + i}>
+          <td><strong>{clean(r.company_name)}</strong></td>
+          <td>{clean(r.primary_hs4)}</td>
+          <td><span className={'badge ' + (r.classification?.includes('TRADER') ? 'bad' : r.classification?.includes('MANUFACTURER') ? 'good' : 'watch')}>{human(r.classification)}</span></td>
+          <td><strong>{fmt.format(n(r.middleman_score))}</strong>/100</td>
+          <td>{fmt.format(n(r.shipment_count))}</td>
+          <td>{'$' + fmt.format(n(r.total_cif_usd))}</td>
+          <td style={{ color: n(r.china_pct) > 50 ? '#f87171' : '#94a3b8' }}>{fmt1.format(n(r.china_pct))}%</td>
+          <td><Stack primary={clean(r.city)} secondary={clean(r.state)} /></td>
+          <td style={{ fontSize: '0.75rem', maxWidth: '250px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{clean(r.score_reasons)}</td>
+        </tr>)}</tbody></table>
+      </div>
+    </section>
+  </>;
+}
+
 function App() {
   const data = useData();
   const [tab, setTab] = useState('control');
@@ -400,7 +476,7 @@ function App() {
   return <div className="app">
     <header><div><h1>Naresh Exim Component Research</h1><p>Evidence-first HS code, exact-unit, supplier, buyer and final-ranking control dashboard.</p></div><button onClick={() => data.reload(tab)}>Refresh</button></header>
     {data.error ? <div className="error">{data.error}</div> : null}
-    <nav><button className={tab === 'control' ? 'active' : ''} onClick={() => setTab('control')}>Plan Control</button><button className={tab === 'hs8Backlog' ? 'active' : ''} onClick={() => setTab('hs8Backlog')}>HS8 Pricing Backlog</button><button className={tab === 'wave' ? 'active' : ''} onClick={() => setTab('wave')}>Wave Progress</button><button className={tab === 'prices' ? 'active' : ''} onClick={() => setTab('prices')}>Price Status</button><button className={tab === 'supplierQueue' ? 'active' : ''} onClick={() => setTab('supplierQueue')}>Supplier Quote Queue</button><button className={tab === 'buySell' ? 'active' : ''} onClick={() => setTab('buySell')}>HS Buy/Sell Map</button><button className={tab === 'relatedCategories' ? 'active' : ''} onClick={() => setTab('relatedCategories')}>Related SKU Categories</button><button className={tab === 'inflow' ? 'active' : ''} onClick={() => setTab('inflow')}>SKU Inflow</button><button className={tab === 'units' ? 'active' : ''} onClick={() => setTab('units')}>Exact Units</button><button className={tab === 'suppliers' ? 'active' : ''} onClick={() => setTab('suppliers')}>Suppliers</button><button className={tab === 'demand' ? 'active' : ''} onClick={() => setTab('demand')}>Demand</button><button className={tab === 'capital' ? 'active' : ''} onClick={() => setTab('capital')}>Capital</button><button className={tab === 'compliance' ? 'active' : ''} onClick={() => setTab('compliance')}>Compliance</button><button className={tab === 'noVolza' ? 'active' : ''} onClick={() => setTab('noVolza')}>No-Volza</button><button className={tab === 'guardrails' ? 'active' : ''} onClick={() => setTab('guardrails')}>Guardrails</button><button className={tab === 'shortlist' ? 'active' : ''} onClick={() => setTab('shortlist')}>Shortlist</button><button className={tab === 'rejections' ? 'active' : ''} onClick={() => setTab('rejections')}>Rejected/Revisit</button></nav>
+    <nav><button className={tab === 'control' ? 'active' : ''} onClick={() => setTab('control')}>Plan Control</button><button className={tab === 'hs8Backlog' ? 'active' : ''} onClick={() => setTab('hs8Backlog')}>HS8 Pricing Backlog</button><button className={tab === 'wave' ? 'active' : ''} onClick={() => setTab('wave')}>Wave Progress</button><button className={tab === 'prices' ? 'active' : ''} onClick={() => setTab('prices')}>Price Status</button><button className={tab === 'supplierQueue' ? 'active' : ''} onClick={() => setTab('supplierQueue')}>Supplier Quote Queue</button><button className={tab === 'buySell' ? 'active' : ''} onClick={() => setTab('buySell')}>HS Buy/Sell Map</button><button className={tab === 'relatedCategories' ? 'active' : ''} onClick={() => setTab('relatedCategories')}>Related SKU Categories</button><button className={tab === 'inflow' ? 'active' : ''} onClick={() => setTab('inflow')}>SKU Inflow</button><button className={tab === 'units' ? 'active' : ''} onClick={() => setTab('units')}>Exact Units</button><button className={tab === 'suppliers' ? 'active' : ''} onClick={() => setTab('suppliers')}>Suppliers</button><button className={tab === 'demand' ? 'active' : ''} onClick={() => setTab('demand')}>Demand</button><button className={tab === 'capital' ? 'active' : ''} onClick={() => setTab('capital')}>Capital</button><button className={tab === 'compliance' ? 'active' : ''} onClick={() => setTab('compliance')}>Compliance</button><button className={tab === 'noVolza' ? 'active' : ''} onClick={() => setTab('noVolza')}>No-Volza</button><button className={tab === 'guardrails' ? 'active' : ''} onClick={() => setTab('guardrails')}>Guardrails</button><button className={tab === 'shortlist' ? 'active' : ''} onClick={() => setTab('shortlist')}>Shortlist</button><button className={tab === 'rejections' ? 'active' : ''} onClick={() => setTab('rejections')}>Rejected/Revisit</button><button className={tab === 'classification' ? 'active' : ''} onClick={() => setTab('classification')}>Buyer Classification</button></nav>
     <LoadingOrError loading={tabLoading} error={tabError} />
     {tab === 'control' ? <Control data={data} /> : null}
     {tab === 'hs8Backlog' ? <Hs8Backlog rows={data.hs8Backlog} /> : null}
@@ -419,6 +495,7 @@ function App() {
     {tab === 'guardrails' ? <SimpleEvidence title="Final Ranking Guardrails" rows={data.finalGuardrails} /> : null}
     {tab === 'shortlist' ? <SimpleEvidence title="Final Shortlist Candidates" rows={data.finalShortlist} /> : null}
     {tab === 'rejections' ? <Rejections rows={data.rejections} /> : null}
+    {tab === 'classification' ? <BuyerClassification rows={data.buyerClassifications} /> : null}
   </div>;
 }
 
