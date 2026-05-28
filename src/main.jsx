@@ -88,6 +88,7 @@ const baseEmpty = {
   finalShortlist: [],
   rejections: [],
   buyerClassifications: [],
+  buyerDeepDive: [],
   loadedTabs: {},
   loadingTabs: {},
   tabErrors: {}
@@ -147,6 +148,9 @@ const tabQueries = {
   ],
   rejections: () => [
     ['rejections', 'Rejection register', supabase.from('component_rejection_register').select('*').order('updated_at', { ascending: false }).limit(700)]
+  ],
+  deepDive: () => [
+    ['buyerDeepDive', 'Buyer deep dive', supabase.from('buyer_deep_dive').select('*').order('deep_dive_path', { ascending: true }).order('priority_rank', { ascending: true })]
   ],
   classification: () => [
     ['buyerClassifications', 'Buyer classifications', (async () => {
@@ -484,6 +488,75 @@ function BuyerClassification({ rows }) {
   </>;
 }
 
+function BuyerDeepDive({ rows }) {
+  const [filters, setFilters] = useState({ search: '', path: 'ALL' });
+  const traders = useMemo(() => rows.filter((r) => r.deep_dive_path === 'TRADER_TARGET'), [rows]);
+  const middlemen = useMemo(() => rows.filter((r) => r.deep_dive_path === 'MIDDLEMAN_TARGET'), [rows]);
+  const filtered = useMemo(() => {
+    let result = rows;
+    if (filters.path !== 'ALL') result = result.filter((r) => r.deep_dive_path === filters.path);
+    if (filters.search) { const q = filters.search.toLowerCase(); result = result.filter((r) => (r.company_name || '').toLowerCase().includes(q) || (r.hs4_codes || '').toLowerCase().includes(q) || (r.key_products_imported || '').toLowerCase().includes(q) || (r.approach_strategy || '').toLowerCase().includes(q)); }
+    return result;
+  }, [rows, filters]);
+  const totalCif = useMemo(() => filtered.reduce((s, r) => s + n(r.total_cif_usd), 0), [filtered]);
+  return <>
+    <section className="kpi-row">
+      <div className="kpi hl"><label>Total Targets</label><strong>{rows.length}</strong></div>
+      <div className="kpi gn"><label>Trader Targets</label><strong>{traders.length}</strong><span>Companies we can SELL to</span></div>
+      <div className="kpi pp"><label>Middleman Targets</label><strong>{middlemen.length}</strong><span>Replace their middleman</span></div>
+      <div className="kpi yw"><label>Total Target CIF</label><strong>{'$' + fmt.format(totalCif)}</strong></div>
+    </section>
+    <section className="filters wide">
+      <input value={filters.search} onChange={(e) => setFilters({ ...filters, search: e.target.value })} placeholder="Search company, HS4, products, strategy..." />
+      <select value={filters.path} onChange={(e) => setFilters({ ...filters, path: e.target.value })}><option value="ALL">All Paths</option><option value="TRADER_TARGET">Path 1: Trader Targets</option><option value="MIDDLEMAN_TARGET">Path 2: Middleman Targets</option></select>
+      <span>{filtered.length} / {rows.length} targets</span>
+      <button onClick={() => setFilters({ search: '', path: 'ALL' })}>Reset</button>
+    </section>
+    {(filters.path === 'ALL' || filters.path === 'TRADER_TARGET') && traders.length > 0 ? <section>
+      <div className="section-title"><h2 style={{ color: '#34d399' }}>Path 1: Trader Targets — Companies We Can Sell To</h2><span>{traders.length} companies | {'$' + fmt.format(traders.reduce((s, r) => s + n(r.total_cif_usd), 0))} CIF</span></div>
+      <p style={{ color: '#94a3b8', margin: '0 0 12px', fontSize: '0.85rem' }}>These are confirmed traders/distributors importing from China. They do NOT manufacture — they buy and resell. We can approach them as a reliable China sourcing partner offering better prices, quality, and consolidation.</p>
+      <div className="table-wrap"><table><thead><tr><th>#</th><th>Company</th><th>Classification</th><th>Products Imported</th><th>CIF Value</th><th>China %</th><th>Suppliers</th><th>Confidence</th><th>Approach Strategy</th></tr></thead>
+      <tbody>{(filters.path === 'TRADER_TARGET' ? filtered : traders).map((r) => <tr key={r.id}>
+        <td><strong>{r.priority_rank}</strong></td>
+        <td><strong>{r.company_name}</strong><br/><span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>{r.iec} | HS4: {r.hs4_codes}</span></td>
+        <td><span className="badge good">{human(r.verified_classification)}</span></td>
+        <td style={{ maxWidth: '280px', fontSize: '0.8rem' }}>{clean(r.key_products_imported)}</td>
+        <td><strong>{'$' + fmt.format(n(r.total_cif_usd))}</strong></td>
+        <td style={{ color: n(r.china_sourcing_pct) > 80 ? '#f87171' : '#fbbf24' }}>{fmt1.format(n(r.china_sourcing_pct))}%</td>
+        <td>{r.supplier_count}</td>
+        <td><span className={'badge ' + (r.confidence === 'HIGH' ? 'good' : 'watch')}>{r.confidence}</span></td>
+        <td style={{ maxWidth: '350px', fontSize: '0.8rem' }}>{clean(r.approach_strategy)}</td>
+      </tr>)}</tbody></table></div>
+    </section> : null}
+    {(filters.path === 'ALL' || filters.path === 'MIDDLEMAN_TARGET') && middlemen.length > 0 ? <section>
+      <div className="section-title"><h2 style={{ color: '#a78bfa' }}>Path 2: Middleman Targets — Replace Their Sourcing Agent</h2><span>{middlemen.length} companies | {'$' + fmt.format(middlemen.reduce((s, r) => s + n(r.total_cif_usd), 0))} CIF</span></div>
+      <p style={{ color: '#94a3b8', margin: '0 0 12px', fontSize: '0.85rem' }}>These are manufacturers importing through multiple middlemen/traders from China. Their fragmented supplier base (many suppliers, similar products) means they are paying middleman markups. We can offer direct factory sourcing to cut costs 5-15%.</p>
+      <div className="table-wrap"><table><thead><tr><th>#</th><th>Company</th><th>Classification</th><th>Products Imported</th><th>CIF Value</th><th>China %</th><th>Suppliers</th><th>Business Model</th><th>Approach Strategy</th></tr></thead>
+      <tbody>{(filters.path === 'MIDDLEMAN_TARGET' ? filtered : middlemen).map((r) => <tr key={r.id}>
+        <td><strong>{r.priority_rank}</strong></td>
+        <td><strong>{r.company_name}</strong><br/><span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>{r.iec} | HS4: {r.hs4_codes}</span></td>
+        <td><span className="badge watch">{human(r.verified_classification)}</span></td>
+        <td style={{ maxWidth: '280px', fontSize: '0.8rem' }}>{clean(r.key_products_imported)}</td>
+        <td><strong>{'$' + fmt.format(n(r.total_cif_usd))}</strong></td>
+        <td style={{ color: n(r.china_sourcing_pct) > 80 ? '#f87171' : '#fbbf24' }}>{fmt1.format(n(r.china_sourcing_pct))}%</td>
+        <td style={{ color: n(r.supplier_count) > 15 ? '#f87171' : '#94a3b8' }}><strong>{r.supplier_count}</strong></td>
+        <td style={{ maxWidth: '250px', fontSize: '0.8rem' }}>{clean(r.business_model_notes)}</td>
+        <td style={{ maxWidth: '350px', fontSize: '0.8rem' }}>{clean(r.approach_strategy)}</td>
+      </tr>)}</tbody></table></div>
+    </section> : null}
+    {filtered.length > 0 ? <section>
+      <div className="section-title"><h2>Research Notes</h2></div>
+      <div className="table-wrap"><table><thead><tr><th>Company</th><th>Path</th><th>Middleman Score</th><th>Notes</th></tr></thead>
+      <tbody>{filtered.map((r) => <tr key={r.id + '-notes'}>
+        <td><strong>{r.company_name}</strong></td>
+        <td><span className={'badge ' + (r.deep_dive_path === 'TRADER_TARGET' ? 'good' : 'watch')}>{r.deep_dive_path === 'TRADER_TARGET' ? 'Trader' : 'Middleman'}</span></td>
+        <td>{r.middleman_score || '-'}</td>
+        <td style={{ fontSize: '0.8rem' }}>{clean(r.research_notes)}</td>
+      </tr>)}</tbody></table></div>
+    </section> : null}
+  </>;
+}
+
 function App() {
   const data = useData();
   const [tab, setTab] = useState('control');
@@ -496,7 +569,7 @@ function App() {
   return <div className="app">
     <header><div><h1>Naresh Exim Component Research</h1><p>Evidence-first HS code, exact-unit, supplier, buyer and final-ranking control dashboard.</p></div><button onClick={() => data.reload(tab)}>Refresh</button></header>
     {data.error ? <div className="error">{data.error}</div> : null}
-    <nav><button className={tab === 'control' ? 'active' : ''} onClick={() => setTab('control')}>Plan Control</button><button className={tab === 'hs8Backlog' ? 'active' : ''} onClick={() => setTab('hs8Backlog')}>HS8 Pricing Backlog</button><button className={tab === 'wave' ? 'active' : ''} onClick={() => setTab('wave')}>Wave Progress</button><button className={tab === 'prices' ? 'active' : ''} onClick={() => setTab('prices')}>Price Status</button><button className={tab === 'supplierQueue' ? 'active' : ''} onClick={() => setTab('supplierQueue')}>Supplier Quote Queue</button><button className={tab === 'buySell' ? 'active' : ''} onClick={() => setTab('buySell')}>HS Buy/Sell Map</button><button className={tab === 'relatedCategories' ? 'active' : ''} onClick={() => setTab('relatedCategories')}>Related SKU Categories</button><button className={tab === 'inflow' ? 'active' : ''} onClick={() => setTab('inflow')}>SKU Inflow</button><button className={tab === 'units' ? 'active' : ''} onClick={() => setTab('units')}>Exact Units</button><button className={tab === 'suppliers' ? 'active' : ''} onClick={() => setTab('suppliers')}>Suppliers</button><button className={tab === 'demand' ? 'active' : ''} onClick={() => setTab('demand')}>Demand</button><button className={tab === 'capital' ? 'active' : ''} onClick={() => setTab('capital')}>Capital</button><button className={tab === 'compliance' ? 'active' : ''} onClick={() => setTab('compliance')}>Compliance</button><button className={tab === 'noVolza' ? 'active' : ''} onClick={() => setTab('noVolza')}>No-Volza</button><button className={tab === 'guardrails' ? 'active' : ''} onClick={() => setTab('guardrails')}>Guardrails</button><button className={tab === 'shortlist' ? 'active' : ''} onClick={() => setTab('shortlist')}>Shortlist</button><button className={tab === 'rejections' ? 'active' : ''} onClick={() => setTab('rejections')}>Rejected/Revisit</button><button className={tab === 'classification' ? 'active' : ''} onClick={() => setTab('classification')}>Buyer Classification</button></nav>
+    <nav><button className={tab === 'control' ? 'active' : ''} onClick={() => setTab('control')}>Plan Control</button><button className={tab === 'hs8Backlog' ? 'active' : ''} onClick={() => setTab('hs8Backlog')}>HS8 Pricing Backlog</button><button className={tab === 'wave' ? 'active' : ''} onClick={() => setTab('wave')}>Wave Progress</button><button className={tab === 'prices' ? 'active' : ''} onClick={() => setTab('prices')}>Price Status</button><button className={tab === 'supplierQueue' ? 'active' : ''} onClick={() => setTab('supplierQueue')}>Supplier Quote Queue</button><button className={tab === 'buySell' ? 'active' : ''} onClick={() => setTab('buySell')}>HS Buy/Sell Map</button><button className={tab === 'relatedCategories' ? 'active' : ''} onClick={() => setTab('relatedCategories')}>Related SKU Categories</button><button className={tab === 'inflow' ? 'active' : ''} onClick={() => setTab('inflow')}>SKU Inflow</button><button className={tab === 'units' ? 'active' : ''} onClick={() => setTab('units')}>Exact Units</button><button className={tab === 'suppliers' ? 'active' : ''} onClick={() => setTab('suppliers')}>Suppliers</button><button className={tab === 'demand' ? 'active' : ''} onClick={() => setTab('demand')}>Demand</button><button className={tab === 'capital' ? 'active' : ''} onClick={() => setTab('capital')}>Capital</button><button className={tab === 'compliance' ? 'active' : ''} onClick={() => setTab('compliance')}>Compliance</button><button className={tab === 'noVolza' ? 'active' : ''} onClick={() => setTab('noVolza')}>No-Volza</button><button className={tab === 'guardrails' ? 'active' : ''} onClick={() => setTab('guardrails')}>Guardrails</button><button className={tab === 'shortlist' ? 'active' : ''} onClick={() => setTab('shortlist')}>Shortlist</button><button className={tab === 'rejections' ? 'active' : ''} onClick={() => setTab('rejections')}>Rejected/Revisit</button><button className={tab === 'classification' ? 'active' : ''} onClick={() => setTab('classification')}>Buyer Classification</button><button className={tab === 'deepDive' ? 'active' : ''} onClick={() => setTab('deepDive')} style={tab === 'deepDive' ? {} : { background: 'rgba(167,139,250,0.15)', borderColor: 'rgba(167,139,250,0.3)' }}>Buyer Deep Dive</button></nav>
     <LoadingOrError loading={tabLoading} error={tabError} />
     {tab === 'control' ? <Control data={data} /> : null}
     {tab === 'hs8Backlog' ? <Hs8Backlog rows={data.hs8Backlog} /> : null}
@@ -516,6 +589,7 @@ function App() {
     {tab === 'shortlist' ? <SimpleEvidence title="Final Shortlist Candidates" rows={data.finalShortlist} /> : null}
     {tab === 'rejections' ? <Rejections rows={data.rejections} /> : null}
     {tab === 'classification' ? <BuyerClassification rows={data.buyerClassifications} /> : null}
+    {tab === 'deepDive' ? <BuyerDeepDive rows={data.buyerDeepDive} /> : null}
   </div>;
 }
 
