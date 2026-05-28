@@ -149,7 +149,19 @@ const tabQueries = {
     ['rejections', 'Rejection register', supabase.from('component_rejection_register').select('*').order('updated_at', { ascending: false }).limit(700)]
   ],
   classification: () => [
-    ['buyerClassifications', 'Buyer classifications', supabase.from('buyer_classifications').select('*').order('middleman_score', { ascending: false }).range(0, 2499)]
+    ['buyerClassifications', 'Buyer classifications', (async () => {
+      const all = [];
+      let from = 0;
+      const pageSize = 1000;
+      while (true) {
+        const { data, error } = await supabase.from('buyer_classifications').select('*').order('middleman_score', { ascending: false }).range(from, from + pageSize - 1);
+        if (error) return { data: all, error };
+        all.push(...(data || []));
+        if (!data || data.length < pageSize) break;
+        from += pageSize;
+      }
+      return { data: all, error: null };
+    })()]
   ]
 };
 
