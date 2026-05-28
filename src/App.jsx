@@ -17,6 +17,7 @@ import ComponentResearch from './tabs/ComponentResearch';
 import HS8Shortlist from './tabs/HS8Shortlist';
 import HS8AllProducts from './tabs/HS8AllProducts';
 import HS8VolzaDetail from './tabs/HS8VolzaDetail';
+import BuyerClassification from './tabs/BuyerClassification';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('overview');
@@ -55,6 +56,7 @@ export default function App() {
       tabs: [
         { id: 'buyers', label: '🎯 Buyers' },
         { id: 'shipments', label: '🚢 Shipments' },
+        { id: 'classification', label: '🔍 Classification' },
       ],
     },
     {
@@ -89,6 +91,7 @@ export default function App() {
       case 'volzadetail': return <HS8VolzaDetail />;
       case 'buyers': return <BuyerIntelligence />;
       case 'shipments': return <ShipmentAnalytics />;
+      case 'classification': return <BuyerClassification />;
       case 'hierarchy': return <HSExplorer />;
       case 'regulatory': return <RegulatoryDashboard />;
       case 'supply': return <SupplyChainView />;
