@@ -149,7 +149,7 @@ const tabQueries = {
     ['rejections', 'Rejection register', supabase.from('component_rejection_register').select('*').order('updated_at', { ascending: false }).limit(700)]
   ],
   classification: () => [
-    ['buyerClassifications', 'Buyer classifications', supabase.from('buyer_classifications').select('*').order('middleman_score', { ascending: false }).limit(2500)]
+    ['buyerClassifications', 'Buyer classifications', supabase.from('buyer_classifications').select('*').order('middleman_score', { ascending: false }).range(0, 2499)]
   ]
 };
 
@@ -397,7 +397,11 @@ const CLASS_COLORS = { TRADER: '#f87171', LIKELY_TRADER: '#fb923c', AMBIGUOUS: '
 function BuyerClassification({ rows }) {
   const [filters, setFilters] = useState({ search: '', cls: 'ALL', hs4: 'ALL', sort: 'score' });
   const classes = useMemo(() => Array.from(new Set(rows.map((r) => r.classification).filter(Boolean))).sort(), [rows]);
-  const hs4s = useMemo(() => Array.from(new Set(rows.map((r) => r.primary_hs4).filter(Boolean))).sort(), [rows]);
+  const hs4s = useMemo(() => {
+    const all = new Set();
+    rows.forEach((r) => { if (r.hs4_codes) String(r.hs4_codes).split(',').map(s => s.trim()).filter(Boolean).forEach(c => all.add(c)); });
+    return Array.from(all).sort();
+  }, [rows]);
 
   const counts = useMemo(() => {
     const m = {};
@@ -409,14 +413,14 @@ function BuyerClassification({ rows }) {
     const q = filters.search.trim().toLowerCase();
     const result = rows.filter((r) => {
       if (filters.cls !== 'ALL' && r.classification !== filters.cls) return false;
-      if (filters.hs4 !== 'ALL' && String(r.primary_hs4) !== filters.hs4) return false;
+      if (filters.hs4 !== 'ALL' && !(r.hs4_codes && String(r.hs4_codes).includes(filters.hs4))) return false;
       if (!q) return true;
-      return rowText(r, ['company_name', 'primary_hs4', 'classification', 'city', 'state', 'score_reasons']).includes(q);
+      return rowText(r, ['company_name', 'hs4_codes', 'classification', 'cities', 'notable_signals']).includes(q);
     });
     const copy = [...result];
     if (filters.sort === 'cif') return copy.sort((a, b) => n(b.total_cif_usd) - n(a.total_cif_usd));
-    if (filters.sort === 'shipments') return copy.sort((a, b) => n(b.shipment_count) - n(a.shipment_count));
-    if (filters.sort === 'china') return copy.sort((a, b) => n(b.china_pct) - n(a.china_pct));
+    if (filters.sort === 'shipments') return copy.sort((a, b) => n(b.total_shipments) - n(a.total_shipments));
+    if (filters.sort === 'china') return copy.sort((a, b) => n(b.avg_china_pct) - n(a.avg_china_pct));
     return copy.sort((a, b) => n(b.middleman_score) - n(a.middleman_score));
   }, [rows, filters]);
 
@@ -437,7 +441,7 @@ function BuyerClassification({ rows }) {
       {classes.map((cls) => <Metric key={cls} label={human(cls)} value={fmt.format(counts[cls] || 0)} color={cls.includes('TRADER') ? 'bad' : cls.includes('MANUFACTURER') ? 'green' : 'amber'} />)}
     </section>
     <section className="filters wide">
-      <input value={filters.search} onChange={(e) => setFilters({ ...filters, search: e.target.value })} placeholder="Search company, HS4, city, state, classification..." />
+      <input value={filters.search} onChange={(e) => setFilters({ ...filters, search: e.target.value })} placeholder="Search company, HS4, city, classification, signals..." />
       <select value={filters.cls} onChange={(e) => setFilters({ ...filters, cls: e.target.value })}><option value="ALL">All classifications</option>{classes.map((c) => <option key={c} value={c}>{human(c)}</option>)}</select>
       <select value={filters.hs4} onChange={(e) => setFilters({ ...filters, hs4: e.target.value })}><option value="ALL">All HS4</option>{hs4s.map((h) => <option key={h} value={h}>{h}</option>)}</select>
       <select value={filters.sort} onChange={(e) => setFilters({ ...filters, sort: e.target.value })}><option value="score">Middleman score high</option><option value="cif">CIF value high</option><option value="shipments">Shipments high</option><option value="china">China % high</option></select>
@@ -447,17 +451,21 @@ function BuyerClassification({ rows }) {
     <section>
       <div className="section-title"><h2>Buyer Classifications</h2><span>{fmt.format(filtered.length)} companies</span></div>
       <div className="table-wrap buy-sell-table">
-        <table><thead><tr><th>Company</th><th>HS4</th><th>Classification</th><th>Score</th><th>Shipments</th><th>CIF USD</th><th>China %</th><th>City / State</th><th>Reasons</th></tr></thead>
+        <table><thead><tr><th>Company</th><th>IEC</th><th>HS4 Codes</th><th>Classification</th><th>Confidence</th><th>Score</th><th>Shipments</th><th>CIF USD</th><th>China %</th><th>Suppliers</th><th>Cities</th><th>Trading Model</th><th>Signals</th></tr></thead>
         <tbody>{filtered.map((r, i) => <tr key={r.company_name + '-' + i}>
           <td><strong>{clean(r.company_name)}</strong></td>
-          <td>{clean(r.primary_hs4)}</td>
+          <td style={{ fontSize: '0.75rem' }}>{clean(r.iec)}</td>
+          <td style={{ fontSize: '0.75rem' }}>{clean(r.hs4_codes)}</td>
           <td><span className={'badge ' + (r.classification?.includes('TRADER') ? 'bad' : r.classification?.includes('MANUFACTURER') ? 'good' : 'watch')}>{human(r.classification)}</span></td>
+          <td><span className={'badge ' + (r.confidence === 'HIGH' ? 'good' : r.confidence === 'MEDIUM' ? 'watch' : 'dim')}>{clean(r.confidence)}</span></td>
           <td><strong>{fmt.format(n(r.middleman_score))}</strong>/100</td>
-          <td>{fmt.format(n(r.shipment_count))}</td>
+          <td>{fmt.format(n(r.total_shipments))}</td>
           <td>{'$' + fmt.format(n(r.total_cif_usd))}</td>
-          <td style={{ color: n(r.china_pct) > 50 ? '#f87171' : '#94a3b8' }}>{fmt1.format(n(r.china_pct))}%</td>
-          <td><Stack primary={clean(r.city)} secondary={clean(r.state)} /></td>
-          <td style={{ fontSize: '0.75rem', maxWidth: '250px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{clean(r.score_reasons)}</td>
+          <td style={{ color: n(r.avg_china_pct) > 50 ? '#f87171' : '#94a3b8' }}>{fmt1.format(n(r.avg_china_pct))}%</td>
+          <td>{fmt.format(n(r.total_suppliers))}</td>
+          <td style={{ fontSize: '0.75rem' }}>{clean(r.cities)}</td>
+          <td><span className="badge dim">{clean(r.trading_model)}</span></td>
+          <td style={{ fontSize: '0.75rem', maxWidth: '250px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.notable_signals || ''}>{clean(r.notable_signals)}</td>
         </tr>)}</tbody></table>
       </div>
     </section>
